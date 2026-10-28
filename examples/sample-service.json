@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "example": true,
+  "service": "ExampleChat AI",
+  "category": "ai-chatbot",
+  "sources": [
+    {
+      "id": "terms",
+      "type": "terms",
+      "url": "https://example.com/examplechat/terms",
+      "retrieved": "2026-10-27",
+      "content_hash": "412a8233c80e8974d94c7e3c72be6e4ecd38890382f61f39dc5e56cfaa9bcc2b",
+      "hash_algorithm": "sha256",
+      "normalization": "v1"
+    },
+    {
+      "id": "privacy",
+      "type": "privacy-policy",
+      "url": "https://example.com/examplechat/privacy",
+      "retrieved": "2026-10-27",
+      "content_hash": "ba942205163b63e95df9f7260283c89f78d4fc83ad58c5a7303a243f80527b37",
+      "hash_algorithm": "sha256",
+      "normalization": "v1"
+    }
+  ],
+  "last_verified": "2026-10-27",
+  "agreements": [
+    {
+      "summary": "EXAMPLE: You may use the chatbot for personal use and must be 18 or older.",
+      "source_refs": [
+        { "source_id": "terms", "locator": "Section 1 (fictional)", "excerpt": "Fictional excerpt: you must be 18 or older." }
+      ]
+    }
+  ],
+  "optional_items": [
+    {
+      "summary": "EXAMPLE: Marketing emails.",
+      "how_to_refuse": "Settings > Notifications > turn off 'Product news' (fictional path).",
+      "source_refs": [
+        { "source_id": "privacy", "locator": "Section 6 (fictional)" }
+      ]
+    }
+  ],
+  "gotchas": [
+    {
+      "id": "training-default-on",
+      "risk_category": "training_on_data",
+      "title": "EXAMPLE: Your chats may be used to train models",
+      "severity": "medium",
+      "default_state": "on",
+      "explanation": "EXAMPLE ONLY. In this fictional service, chats are used to improve models unless you opt out. An opt-out toggle exists, so this is rated medium.",
+      "fix_steps": [
+        "Open Settings.",
+        "Go to Privacy > Data controls.",
+        "Turn off 'Improve the model for everyone'.",
+        "Leave it on only if you are happy for your chats to be used this way."
+      ],
+      "source_refs": [
+        { "source_id": "privacy", "locator": "Section 3 (fictional)", "excerpt": "Fictional excerpt: we may use your content to improve our models." }
+      ]
+    },
+    {
+      "id": "retention-30-days",
+      "risk_category": "retention",
+      "title": "EXAMPLE: Deleted chats are kept for a while",
+      "severity": "low",
+      "default_state": "unavoidable",
+      "explanation": "EXAMPLE ONLY. In this fictional service, deleted chats are removed from view at once but kept for 30 days before final deletion.",
+      "fix_steps": [],
+      "source_refs": [
+        { "source_id": "privacy", "locator": "Section 5 (fictional)" }
+      ]
+    },
+    {
+      "id": "arbitration-with-opt-out",
+      "risk_category": "arbitration_class_waiver",
+      "title": "EXAMPLE: Disputes go to arbitration, class actions waived",
+      "severity": "medium",
+      "default_state": "on",
+      "explanation": "EXAMPLE ONLY. The fictional terms require individual arbitration and waive class actions, with a 30-day opt-out window after signup.",
+      "fix_steps": [
+        "Find the opt-out instructions in the 'Disputes' section of the terms.",
+        "Send the opt-out notice within the stated window (fictional: 30 days)."
+      ],
+      "source_refs": [
+        { "source_id": "terms", "locator": "Section 12 (fictional)" }
+      ]
+    },
+    {
+      "id": "terms-change-notice",
+      "risk_category": "unilateral_changes",
+      "title": "EXAMPLE: Terms can change, notice is by email",
+      "severity": "low",
+      "default_state": "unavoidable",
+      "explanation": "EXAMPLE ONLY. The fictional service may update its terms and says it will email you before changes take effect.",
+      "fix_steps": [],
+      "source_refs": [
+        { "source_id": "terms", "locator": "Section 14 (fictional)" }
+      ]
+    }
+  ],
+  "recommended_setup": [
+    "EXAMPLE: Turn off model-improvement in Privacy > Data controls.",
+    "EXAMPLE: Avoid putting sensitive personal details into chats.",
+    "EXAMPLE: Note the arbitration opt-out deadline on signup."
+  ],
+  "change_log": [
+    {
+      "date": "2026-10-27",
+      "summary": "EXAMPLE: Initial fictional entry created."
+    }
+  ],
+  "disclaimer": "EXAMPLE ENTRY for a fictional service, shown only to illustrate the format. This is a plain-English summary for information only, not legal advice. Always read the official terms."
+}
