@@ -1,16 +1,19 @@
 # tc-prototype: local proof of concept for a free "terms guide" (working name, not decided)
 
-Phase: **consumption only**. It finds, looks at and collects terms / privacy / EULA / cookie text into a
-**local** dataset. No AI summaries, no advice, no model. Values: privacy first, protect humans, help humans.
-Informational tooling only, not legal advice.
+Phase: **Explain** (built on the consumption phase). Click the extension on a terms page, or at an "I agree" dialog, and a window explains it in plain
+English, briefly: a 3-line overview, then one plain sentence per point (High / Medium first, lower concerns after), judged
+in the context of the kind of site. The exact wording is one click away. The analysis is **on-device fixed rules, not AI**: no model; the only network use is fetching the documents an agree dialog links to, after you click and allow that site; nothing is sent anywhere, and **nothing is
+saved by default**. The older collection code (local dataset) is still there, off unless you opt in.
+Values: privacy first, protect humans, help humans. Informational tooling only, **not legal advice**.
 
 Everything here is local to this box/device. Nothing was pushed, sent or published. There is no GitHub repo involved.
 
 ## What is in the box
 | Path | What |
 |------|------|
-| `extension/` | Chrome MV3 extension (popup with a **Please help me** button) |
-| `extension/core/` | Shared pure code: text extractor, link/page detector, hashing + versioning + diff |
+| `extension/` | Chrome MV3 extension (toolbar click -> launcher -> **Explain window**; the old collection popup is kept as the advanced view) |
+| `extension/core/` | Shared pure code: text extractor, link/page detector, hashing + versioning + diff, **rules.js + analyze.js (Explain rule engine)** |
+| `extension/explain/` | Launcher popup and the Explain window |
 | `cli/` | `tc-collect <url>` Node CLI (robots-aware, logged-out, rate-limited, SQLite) |
 | `tests/` | Offline tests (node:test) + HTML fixtures for fake sites (`tests/fixtures/sites`) + optional Chrome e2e |
 | `docs/SECURITY.md` | Local-only data, what is saved, SSRF guard, untrusted text, prompt-injection note for model phases |
@@ -23,21 +26,38 @@ Chrome is only needed to use the extension, and for the optional e2e.
 ## Run the tests
 ```
 cd /workspace/tc-prototype
-npm test                 # offline unit + CLI + security + quality + extension-lint tests, no network beyond 127.0.0.1 (85 tests)
+npm test                 # offline unit + CLI + security + quality + rule-engine + extension-lint tests, no network beyond 127.0.0.1 (130 tests)
 npm run validate         # manifest validation
-npm run test:e2e         # OPTIONAL: real headless Chrome (13 checks); skips itself if Chrome is not installed
+npm run test:e2e         # OPTIONAL: real headless Chrome (19 checks); skips itself if Chrome is not installed
 ```
 The tests only talk to a local fixture server on 127.0.0.1 serving invented sites ("Acme Example", `*.test` addresses).
 No real site is scraped in tests.
 
 ## Load the extension (unpacked)
 1. Open `chrome://extensions`, switch on **Developer mode**.
-2. **Load unpacked** and pick the `extension/` folder.
-3. Go to a page with a signup form or a footer with terms links, click the extension icon, then **Please help me**.
+2. **Load unpacked** and pick the `extension/` folder (after pulling new code, press the reload button on the extension card).
+3. Open a terms page (or a page whose footer links to terms), click the extension icon. A window opens and explains the page.
 
-What it does on click, and only on click:
+## Explain: what you see and how it works
+Click the icon on a terms page. The window shows, top to bottom:
+1. A notice: **Informational, not legal advice**.
+2. **Overview**, three short lines: the site and kind of document, the type of service it guessed (news, shopping, social, finance, app, or "not clear"), and the headline takeaway. No word counts or other filler.
+3. **Worth knowing** (High and Medium) and **Also agreeing to** (lower concern): one plain sentence per point, with a badge. Related points are merged (arbitration, class action and jury waiver are one line, e.g. "You can't sue them in a class action lawsuit." when that is all there is). A small note appears when the kind of service changed how much a point matters (limited liability is routine on a news site, so it is Low there, but High on a bank or shop).
+4. **Show exact wording** under each point (closed by default): the quote(s) from the page, checked word for word; anything that cannot be verified is dropped. Very long sentences are shown in exact pieces, marked "Shortened". Read the full terms on the page if you want more.
+5. **At an "I agree" dialog, banner or sign-up prompt** (for example a news site's "Legal Terms and Privacy" Agree dialog), click the icon there: the window finds the Terms, Privacy, Cookie policy and anything else the prompt links to, reads them for you and gives **one** combined explanation. Each point says which document it came from; identical points are merged. It never clicks Agree.
+   - First time for a site, Chrome asks you once to allow access to that site (an optional permission; nothing is allowed in advance). Because Chrome only asks after a click inside the window, you press **Read these N documents** once. Remove the access any time under Options.
+   - Documents are fetched logged out, over https, one request each (max 6), and not saved unless you tick "Save copies".
+6. If there is no dialog and the page is not a terms page, it lists the legal links it found, **one entry per document** (regional and language copies collapsed, preferring your language), 3 shown and the rest behind "Show more". Use "Explain this" on one, or "Explain all of these together".
+
+The 12 topics checked: forced arbitration, class-action waiver, jury trial waiver, data sold or shared, auto-renewal / recurring billing, the company changing the terms on its own, license to your content, liability limits and disclaimers, termination at will, governing law and venue, age requirements, tracking and cookies. The rules are in `extension/core/rules.js`; the engine is `extension/core/analyze.js`.
+
+Storage: **nothing is saved by default**. Options in the window has a "Save copies" checkbox that switches the older collection path back on (IndexedDB, versions, diff, export; manage it from the "saved copies" link). Without it, nothing is written when you click.
+
+Not built (parked until Jeff decides): tracking what you have agreed to, and using Chrome's built-in on-device AI.
+
+Older collection behaviour (still in the code; used only if you turn on "Save copies", or open the advanced popup). It does this on click, and only on click:
 - Injects a detector into the current tab with `chrome.scripting.executeScript` (permission `activeTab`; there is no
-  `content_scripts` entry in the manifest, and no host permissions).
+  `content_scripts` entry in the manifest, and no up-front host permissions; v0.3.0 added only one optional `https://*/*` permission that is requested per site after a click, for the Explain window; v0.3.1 adds no permission: linked documents are fetched without following redirects and after a robots.txt check, see below).
 - It lists terms / privacy / EULA / cookie links it finds (by link text, URL patterns and common paths such as
   `/terms`, `/privacy`; it only reports links that exist on the page, it never guesses URLs). Link text and URLs are
   recognised in English, Spanish, French, German, Portuguese and Italian; the language is shown, and PDF links are flagged.
@@ -92,8 +112,11 @@ CLI behaviour:
 - The user can export and delete everything from the popup.
 - Records carry `private_only = true`. Sharing or redistribution is blocked on a lawyer review (OPEN_QUESTIONS.md).
 - No model is bundled or downloaded. No third-party runtime dependency (PARTNERS.md).
+- Explain (v0.3.1): linked documents are never fetched through a redirect (`redirect:'manual'`: a redirecting page is shown as "not read" with its link, the target is never requested), bare IP addresses are refused, and `https://<site>/robots.txt` is read first (same guarded, cookie-less GET, 4 s timeout; user-agent `*`; a disallow skips the document and shows its link with the reason; missing, unreadable, slow or redirected robots.txt means allowed; kept in memory for that one analysis only). Why no `declarativeNetRequest`: it can fence redirects before they go out, but only with the "Block content on any page" install warning; the warning-free `declarativeNetRequestWithHostAccess` does not cover sites we have no access to. Evidence you can re-run: `npm run probe:dnr`.
+- Explain: the page is read on click with `activeTab`; the documents an agree dialog links to are fetched only after the click and a per-site Chrome permission prompt, logged out; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
 
 ## Known limitations (honest list)
+- The type-of-service guess can be wrong or "not clear", and the adjustments are judgement calls. Explain rules are sentence-level patterns: they can miss unusual wording or misread a sentence, and "nothing found" does not mean a term is absent. Severity is a rough guide. English only. Wording and severity have not had a lawyer's review. This is not legal advice.
 - Built-in extractor (heuristic, no Readability). It reads collapsed text that is in the DOM, but text a page only loads when you click (lazy-loaded via JS) is not captured. PDFs are detected but not read (needs the pdftotext partner). Chrome only. Link patterns cover English, Spanish, French, German, Portuguese and Italian only; the language guess for stored text uses stop words and says "unknown" for short text.
 - Chrome-removal rules are heuristics; `tc-collect quality` flags leftovers (for example cookie-banner lines) but cannot prove a page is clean. The live-smoke Wikimedia language list was fixed on fixtures; it has not been re-fetched live.
 - The SSRF guard protects a user-run CLI. It is not a hardened server component (see `docs/SECURITY.md`).

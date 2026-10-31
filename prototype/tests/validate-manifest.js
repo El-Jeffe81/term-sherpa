@@ -19,7 +19,8 @@ function validate() {
   // hard rules
   ok(!('content_scripts' in m), 'RULE: no manifest content_scripts (inject only on click)');
   ok(!('host_permissions' in m), 'RULE: no host_permissions');
-  ok(!('optional_host_permissions' in m), 'RULE: no optional_host_permissions (extension makes no network requests)');
+  // The ONLY host access is optional, https-only, and requested at click time for just the needed site (chrome.permissions.request).
+  ok(JSON.stringify(m.optional_host_permissions || []) === JSON.stringify(['https://*/*']), 'RULE: optional_host_permissions must be exactly ["https://*/*"] (requested per site at click time, never granted up front)');
   ok(!('background' in m), 'no background/service worker needed');
   ok(!('web_accessible_resources' in m), 'no web_accessible_resources');
   ok(!('externally_connectable' in m), 'no externally_connectable');
@@ -35,23 +36,27 @@ function validate() {
   Object.values(m.icons || {}).forEach((f) => refs.push(f));
   for (const f of refs) ok(fs.existsSync(path.join(EXT, f)), 'missing file: ' + f);
 
-  // popup html: every script/link is local and exists; no inline scripts
-  const popup = path.join(EXT, m.action.default_popup);
-  if (fs.existsSync(popup)) {
-    const html = fs.readFileSync(popup, 'utf8');
+  // every extension html page (popup launcher, explain window, legacy collection popup): scripts/links are local and exist; no inline scripts
+  const pages = (function walkHtml(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => d.isDirectory() ? walkHtml(path.join(dir, d.name)) : /\.html$/.test(d.name) ? [path.join(dir, d.name)] : []); })(EXT);
+  ok(pages.length >= 1, 'no html pages found');
+  for (const page of pages) {
+    const html = fs.readFileSync(page, 'utf8');
+    const rel = path.relative(EXT, page);
     for (const mm of html.matchAll(/<script\b([^>]*)>/gi)) {
       const src = (/src="([^"]+)"/.exec(mm[1]) || [])[1];
-      ok(!!src, 'inline <script> not allowed under MV3 CSP');
-      if (src) { ok(!/^[a-z]+:|^\/\//i.test(src), 'remote script: ' + src); ok(fs.existsSync(path.join(path.dirname(popup), src)), 'missing script: ' + src); }
+      ok(!!src, rel + ': inline <script> not allowed under MV3 CSP');
+      if (src) { ok(!/^[a-z]+:|^\/\//i.test(src), rel + ': remote script: ' + src); ok(fs.existsSync(path.join(path.dirname(page), src)), rel + ': missing script: ' + src); }
     }
-    for (const mm of html.matchAll(/<link\b[^>]*href="([^"]+)"/gi)) ok(!/^[a-z]+:|^\/\//i.test(mm[1]) && fs.existsSync(path.join(path.dirname(popup), mm[1])), 'bad stylesheet: ' + mm[1]);
-    ok(!/\son\w+\s*=/i.test(html), 'inline event handlers not allowed');
+    for (const mm of html.matchAll(/<link\b[^>]*href="([^"]+)"/gi)) ok(!/^[a-z]+:|^\/\//i.test(mm[1]) && fs.existsSync(path.join(path.dirname(page), mm[1])), rel + ': bad stylesheet: ' + mm[1]);
+    ok(!/\son\w+\s*=/i.test(html), rel + ': inline event handlers not allowed');
   }
   // files injected on click must exist
-  const popupJs = fs.readFileSync(path.join(EXT, 'popup', 'popup.js'), 'utf8');
-  const inj = /INJECT_FILES\s*=\s*\[([^\]]+)\]/.exec(popupJs);
-  ok(!!inj, 'popup.js must list INJECT_FILES');
-  if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) ok(fs.existsSync(path.join(EXT, f)), 'missing injected file: ' + f);
+  for (const js of ['popup/popup.js', 'explain/explain.js']) {
+    const src = fs.readFileSync(path.join(EXT, js), 'utf8');
+    const inj = /INJECT_FILES\s*=\s*\[([^\]]+)\]/.exec(src);
+    ok(!!inj, js + ' must list INJECT_FILES');
+    if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) ok(fs.existsSync(path.join(EXT, f)), js + ': missing injected file: ' + f);
+  }
   return errors;
 }
 
@@ -59,5 +64,5 @@ module.exports = { validate };
 if (require.main === module) {
   const errs = validate();
   if (errs.length) { console.error('MANIFEST INVALID:\n- ' + errs.join('\n- ')); process.exit(1); }
-  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no host permissions)');
+  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)');
 }

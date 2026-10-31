@@ -8,7 +8,7 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var TYPE_LABEL = { tos: 'Terms', privacy: 'Privacy', eula: 'EULA', cookies: 'Cookies', other: 'Other' };
-  var INJECT_FILES = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'content/run.js'];
+  var INJECT_FILES = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'];
 
   function setStatus(msg, isErr) {
     var s = $('status'); s.textContent = msg; s.className = isErr ? 'err' : '';

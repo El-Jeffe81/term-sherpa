@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Terms Guide: explanation</title>
+  <link rel="stylesheet" href="explain.css">
+</head>
+<body>
+  <h1>Terms Guide <small>(working name)</small></h1>
+  <p class="notice" id="notice">Informational, not legal advice. This is an automatic scan done on this device with fixed rules (no AI, nothing is sent anywhere). It can miss things or misread them. Read the full terms, and talk to a lawyer if the decision matters.</p>
+  <div id="status" role="status" aria-live="polite">Reading the page...</div>
+
+  <main id="result" hidden>
+    <section id="overview" aria-label="Overview">
+      <ul id="overview-summary" class="overview"></ul>
+      <p id="overview-note" class="muted" hidden></p>
+    </section>
+
+    <section id="risks" aria-labelledby="h-risks">
+      <h2 id="h-risks">Worth knowing</h2>
+      <ul id="risk-list" class="points"></ul>
+    </section>
+
+    <section id="also" aria-labelledby="h-also">
+      <h2 id="h-also">Also agreeing to <span class="muted">(lower concern)</span></h2>
+      <ul id="also-list" class="points"></ul>
+    </section>
+
+    <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict. Not finding something does not mean the terms do not contain it. The full terms are on the page if you want to read them.</p>
+  </main>
+
+  <section id="permission" hidden>
+    <h2>Read the documents you are agreeing to</h2>
+    <p id="perm-text"></p>
+    <button id="perm-go" class="primary">Read these documents</button>
+    <p class="muted">Nothing is allowed in advance. You can remove the access again under Options.</p>
+  </section>
+
+  <details id="docs-read" class="docs" hidden>
+    <summary id="docs-count">Documents read</summary>
+    <ul id="docs-list" class="plain"></ul>
+  </details>
+
+  <section id="candidates" hidden>
+    <h2>Legal documents on this page</h2>
+    <ul id="candidate-list"></ul>
+    <p><button id="candidate-more" hidden>Show more</button> <button id="candidate-all" hidden>Explain all of these together</button></p>
+    <p class="muted">"Explain this" reads that one document for you (Chrome asks once to allow the site). "Open this page" opens it in a tab; click the Terms Guide icon there. Only a link you open is remembered, for one hour.</p>
+  </section>
+
+  <section id="paste" hidden>
+    <h2>I couldn't find any terms links</h2>
+    <p>Paste the link to the terms or privacy page:</p>
+    <div class="row">
+      <input id="paste-url" type="url" placeholder="https://example.com/terms" aria-label="URL of the terms page">
+      <button id="paste-open">Open it</button>
+    </div>
+  </section>
+
+  <details id="options" class="options">
+    <summary>Options</summary>
+    <label class="opt"><input type="checkbox" id="save-copies"> Also save a copy of the terms on this device (off by default)</label>
+    <p class="muted">By default nothing about the terms is stored: the text is read, explained, and forgotten when you close this window. If you turn this on, each terms page you explain is also saved in this extension's local database on this device (never uploaded), where the older "saved copies" list can show, export or delete it.</p>
+    <p class="muted">When you ask me to read the documents an "I agree" dialog links to, Chrome asks once per site for access. Nothing is allowed up front.</p>
+    <p><button id="revoke">Remove the site access I have allowed</button></p>
+    <p><a id="saved-link" href="../popup/popup.html" target="_blank" rel="noopener">Open saved copies (advanced)</a></p>
+  </details>
+
+  <script src="../core/untrusted.js"></script>
+  <script src="../core/netguard.js"></script>
+  <script src="../core/extract.js"></script>
+  <script src="../core/detect.js"></script>
+  <script src="../core/linkgroup.js"></script>
+  <script src="../core/robots.js"></script>
+  <script src="../core/docfetch.js"></script>
+  <script src="domparse.js"></script>
+  <script src="../core/quote.js"></script>
+  <script src="../core/versioning.js"></script>
+  <script src="../core/rules.js"></script>
+  <script src="../core/context.js"></script>
+  <script src="../core/analyze.js"></script>
+  <script src="../popup/db.js"></script>
+  <script src="explain.js"></script>
+</body>
+</html>

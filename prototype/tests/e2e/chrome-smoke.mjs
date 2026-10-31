@@ -18,18 +18,44 @@ const EXT = path.join(ROOT, 'extension');
 const CHROME = process.env.CHROME_BIN || ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'].find((c) => { try { return require('node:child_process').spawnSync('which', [c]).status === 0; } catch { return false; } });
 if (!CHROME) { console.log('SKIP: no Chrome/Chromium found (set CHROME_BIN)'); process.exit(0); }
 
+// A real https server for the documents an agree dialog links to (the extension fetches https only, never loopback http).
+// docs.newsco.test is mapped to it inside this throw-away Chrome only (--host-resolver-rules), with a self-signed certificate
+// (--ignore-certificate-errors). Nothing in the extension is relaxed for this: the production URL guard sees a normal https URL.
+const SITES_DIR = path.join(ROOT, 'tests', 'fixtures', 'sites');
+const tlsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-tls-'));
+const sslOk = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', path.join(tlsDir, 'k.pem'), '-out', path.join(tlsDir, 'c.pem'), '-days', '2', '-subj', '/CN=docs.newsco.test', '-addext', 'subjectAltName=DNS:docs.newsco.test'], { stdio: 'ignore' }).status === 0;
+const tlsHits = [];
+const TLS_ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.html', '/cookies': 'newsco/cookies.html', '/community-guidelines': 'newsco/community-guidelines.html', '/subscriber-agreement': 'newsco/subscriber-agreement.html' };
+const tls = sslOk ? await new Promise((resolve) => {
+  const srv = require('node:https').createServer({ key: fs.readFileSync(path.join(tlsDir, 'k.pem')), cert: fs.readFileSync(path.join(tlsDir, 'c.pem')) }, (req, res) => {
+    tlsHits.push({ url: req.url, headers: req.headers });
+    const u = req.url.split('?')[0];
+    if (u === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: googlebot\nDisallow: /\n\nUser-agent: *\nDisallow: /blocked-by-robots\n'); }
+    // redirects: one inside the site, one to another address that answers with CORS "*" (so a followed redirect would even be readable)
+    if (u === '/moved-terms') { res.writeHead(302, { location: '/terms' }); return res.end(); }
+    if (u === '/moved-offsite') { res.writeHead(302, { location: `https://127.0.0.1:${tls.address().port}/redirect-trap` }); return res.end(); }
+    if (u === '/redirect-trap') { res.writeHead(200, { 'content-type': 'text/html', 'access-control-allow-origin': '*' }); return res.end('<html><body>trap</body></html>'); }
+    const f = u === '/blocked-by-robots' ? 'newsco/terms.html' : TLS_ROUTES[u];
+    if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f)));
+  });
+  srv.listen(0, '127.0.0.1', () => resolve(srv));
+}) : null;
+const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MAP docs.newsco.test 127.0.0.1:${tls.address().port}`] : [];
+
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chrome-'));
 // Pipe transport: Extensions.loadUnpacked is only available with --remote-debugging-pipe + --enable-unsafe-extension-debugging
 // (branded Chrome ignores --load-extension). This flag is for this throw-away test profile only.
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-  '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+  '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', ...tlsFlags, `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let stderr = ''; chrome.stderr.on('data', (d) => { stderr += d; });
 const site = await startSite({ routes: {
   '/terms': { file: 'acme/terms.html' }, '/signup': { file: 'acme/index.html' }, '/cookies': { file: 'acme/cookies.html' }, '/privacy': { file: 'divsoup/privacy.html' },
   '/accordion/terms': { file: 'accordion/terms.html' }, '/langlist/terms': { file: 'langlist/terms.html' }, '/legal': { file: 'hub/legal.html' },
-  '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }
+  '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }, '/news/terms': { file: 'newsco/terms.html' },
+  '/home': { file: 'newsco/home.html' }, '/cookie-banner': { file: 'newsco/cookie-banner.html' }, '/article': { file: 'newsco/article.html' }, '/privacy-center': { file: 'mediaco/privacy-center.html' }
 } });
-const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
+const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); if (tls) { tls.closeAllConnections(); tls.close(); } try { fs.rmSync(tlsDir, { recursive: true, force: true }); } catch {} try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
 process.on('exit', () => { try { chrome.kill('SIGKILL'); } catch {} });
 
 let id = 0; const pending = new Map(); const exceptions = [];
@@ -52,7 +78,7 @@ async function openTab(url) {
 const results = []; const ok = (name) => { results.push(name); console.log('  ok -', name); };
 try {
   // (1) injected scripts in a real DOM
-  const inject = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'content/run.js'].map((f) => fs.readFileSync(path.join(EXT, f), 'utf8')).join('\n;\n');
+  const inject = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'].map((f) => fs.readFileSync(path.join(EXT, f), 'utf8')).join('\n;\n');
   const runIn = async (url, opts) => { const t = await openTab(url); await t.ev(`globalThis.__tcOptions = ${JSON.stringify(opts)}`); await t.ev(inject); const r = await t.ev('JSON.stringify(globalThis.__tcResult)'); await send('Target.closeTarget', { targetId: t.targetId }); return JSON.parse(r); };
 
   const terms = await runIn(site.base + '/terms', {});
@@ -144,6 +170,265 @@ try {
   assert.equal(f.expLinks, 2); assert.equal(f.secSections, 1); assert.equal(f.secLang, 'en');
   assert.equal(f.dirtyText.replace(/\s+/g, ' ').trim(), 'ok text here'); assert.equal(f.cleared, '0/0');
   ok('real IndexedDB (v2): versions + diff, links (picked, PDF flag, unsafe refused), sections, sanitizing on save, export, delete, clear');
+
+  // (3) Explain window: launcher + explain page in the real extension, fed with the real injected-script result
+  const launcher = await openTab(`chrome-extension://${extId}/explain/launcher.html`);
+  assert.equal(await launcher.ev("typeof chrome.windows.create"), 'function');
+  assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
+  ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
+  const manifestPerms = JSON.parse(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().permissions)'));
+  assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting']);
+  assert.equal(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().host_permissions || null) + JSON.stringify(chrome.runtime.getManifest().content_scripts || null)'), 'nullnull');
+  assert.equal(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().optional_host_permissions)'), '["https://*/*"]');
+  const grantedNow = await launcher.ev('chrome.permissions.getAll().then((a) => JSON.stringify(a))');
+  assert.deepEqual(JSON.parse(grantedNow).origins || [], [], 'no site access is granted at install time');
+  ok('loaded manifest: only activeTab + scripting, no up-front host access (only optional https), no content_scripts');
+
+  const ex = await openTab(`chrome-extension://${extId}/explain/explain.html`);
+  assert.match(await ex.ev('document.getElementById("status").textContent'), /click the Terms Guide icon/i);
+  assert.match(await ex.ev('document.getElementById("notice").textContent'), /Informational, not legal advice/);
+  await ex.ev('TCDB.clearAll().then(() => localStorage.clear())');
+  const view = async (res) => JSON.parse(await ex.ev(`(async () => {
+    const out = await TCExplainUI.show(${JSON.stringify(res)});
+    const q = (sel) => [...document.querySelectorAll(sel)].map((n) => n.textContent);
+    const point = (li) => ({ sec: li.closest('ul').id, cls: li.className, badge: li.querySelector('.badge') ? li.querySelector('.badge').textContent : '', line: li.querySelector('.line .text').textContent,
+      ctx: li.querySelector('.ctx') ? li.querySelector('.ctx').textContent : '', open: li.querySelector('details').open, toggle: li.querySelector('summary').textContent,
+      quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent), quoteVisible: [...li.querySelectorAll('blockquote')].some((b) => b.checkVisibility()) });
+    return JSON.stringify({ kind: out.kind, hidden: document.getElementById('result').hidden, status: document.getElementById('status').textContent,
+      summary: q('#overview-summary li'), points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map(point),
+      visibleText: document.getElementById('result').innerText, imgs: document.querySelectorAll('img, script:not([src]), iframe, object, embed').length, docs: (await TCDB.listDocs()).length });
+  })()`));
+  const v1 = await view(terms);
+  assert.equal(v1.kind, 'analysis'); assert.equal(v1.hidden, false);
+  assert.equal(v1.docs, 0, 'default: nothing saved in IndexedDB');
+  assert.match(v1.status, /Nothing was saved/);
+  assert.deepEqual(v1.points.map((c) => c.cls.split(' ').pop()), ['sev-High', 'sev-High', 'sev-Medium', 'sev-Medium', 'sev-Low', 'sev-Low', 'sev-Low'], 'ranked High, Medium, Low, with the dispute points merged into one');
+  assert.deepEqual(v1.points.map((c) => c.sec), ['risk-list', 'risk-list', 'risk-list', 'risk-list', 'also-list', 'also-list', 'also-list']);
+  assert.ok(v1.points.every((c) => c.line.length > 10 && c.line.length < 120 && !c.open && c.toggle === 'Show exact wording' && c.quotes.length >= 1));
+  assert.ok(v1.points.every((c) => !c.quoteVisible), 'exact wording is collapsed by default');
+  for (const c of v1.points) for (const qt of c.quotes) assert.ok(terms.extracted.text.replace(/\s+/g, ' ').includes(qt.replace(/\s+/g, ' ')), 'quote is verbatim in the page text: ' + qt);
+  assert.equal(v1.points[0].line, "Disputes go to private arbitration, and you can't join a class action lawsuit.");
+  assert.ok(v1.points[0].quotes.some((x) => x.includes('individual arbitration')));
+  assert.equal(v1.summary.length, 3);
+  assert.ok(!/\bwords?\b|minutes|reading time|of the 12|topics/i.test(v1.visibleText), 'no word count or other filler in the visible text');
+  assert.ok(!terms.extracted.text.split(/\n/).some((l) => l.length > 60 && v1.visibleText.includes(l)), 'long passages of the terms are not copied into the window');
+  ok('explain window: 3-line overview, one sentence per point, ranked, exact wording collapsed and verbatim; no word count; nothing saved by default');
+
+  const nv = await view(await runIn(site.base + '/news/terms', {}));
+  const liab = nv.points.find((c) => /limit what they owe/.test(c.line));
+  assert.ok(liab && liab.sec === 'also-list' && liab.cls.endsWith('sev-Low'), 'on a news site limited liability is a lower concern');
+  assert.match(liab.ctx, /news or media/);
+  assert.match(nv.summary[1], /news \/ media/);
+  assert.equal(nv.points.filter((c) => /arbitration|class action|jury/i.test(c.line)).length, 1, 'arbitration, class action and jury waiver are one line');
+  ok('explain window: news-site terms are read in context (limited liability not a High risk, dispute points merged)');
+
+  const hv = await view(await runIn(site.base + '/hostile/terms', {}));
+  assert.equal(hv.imgs, 0, 'no img/script/iframe elements created from page text');
+  ok('explain window: hostile page text is shown as text only (no elements created)');
+
+  await ex.ev("localStorage.setItem('tc.saveCopies','1')");
+  const v2 = await view(terms);
+  assert.equal(v2.docs, 1, 'with the explicit opt-in the old collection path saves a copy');
+  assert.match(v2.status, /because you turned that option on/);
+  await ex.ev("localStorage.removeItem('tc.saveCopies'); TCDB.clearAll()");
+  ok('opt-in "save copies" switches the old IndexedDB path on; off again afterwards');
+
+  const lk = await view(await runIn(site.base + '/about', {}));
+  assert.equal(lk.kind, 'links'); assert.equal(lk.hidden, true);
+  // this fixture page has an inline "By signing up you agree to the Terms and Privacy Policy" prompt, but it is served over loopback http,
+  // which the fetch guard refuses -> the two linked documents are listed (not read) with the reason
+  assert.equal(await ex.ev("document.querySelectorAll('#candidate-list li').length"), 2);
+  assert.match(lk.status, /none of them can be read here/);
+  assert.equal(await ex.ev("localStorage.getItem('tc.saveCopies')"), null);
+  ok('explain window: non-terms page -> candidate links only, no analysis, no storage');
+  if (process.env.TC_SHOT) { await view(terms); const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT, Buffer.from(shot.data, 'base64')); }
+
+
+  // (4) The agree dialog: explain the documents it links to (Terms + Privacy + Cookies + ...), one combined explanation.
+  if (!tls) console.log('  SKIP (4): openssl not available for the local https fixture server');
+  else {
+    const home = await runIn(site.base + '/home', {});
+    assert.equal(home.consent.found, true); assert.equal(home.consent.kind, 'dialog'); assert.deepEqual(home.consent.buttons, ['Agree']);
+    assert.deepEqual(home.consent.links.map((l) => l.doc_type), ['tos', 'privacy', 'cookies', 'other']);
+    assert.equal(home.extracted, null, 'the page behind the dialog is not read');
+    ok('real DOM: a CNN-style "Legal Terms and Privacy" Agree modal is found with its Terms, Privacy, Cookies and Community Guidelines links');
+    const cb = await runIn(site.base + '/cookie-banner', {});
+    assert.equal(cb.consent.found, true); assert.equal(cb.consent.kind, 'banner');
+    const art = await runIn(site.base + '/article', {});
+    assert.equal(art.consent.found, false);
+    assert.equal((await runIn(site.base + '/privacy-center', {})).consent.found, false);
+    ok('real DOM: cookie banner found; plain article and privacy centre have no dialog');
+    // reading must never touch the dialog: keep the tab open and look at it afterwards
+    {
+      const t = await openTab(site.base + '/home');
+      await t.ev(`globalThis.__tcOptions = {}`); await t.ev(inject); await t.ev('JSON.stringify(globalThis.__tcResult)');
+      assert.equal(await t.ev('typeof window.__agreeClicked'), 'undefined', 'Agree was not clicked');
+      assert.equal(await t.ev("document.querySelector('[role=dialog]').checkVisibility()"), true, 'the dialog is still showing');
+      assert.equal(await t.ev("document.querySelectorAll('input:checked').length"), 0);
+      await send('Target.closeTarget', { targetId: t.targetId });
+      ok('real DOM: the injected reader never clicks Agree or touches the dialog');
+    }
+
+    // (4a) real manifest: nothing is read until the user approves the site
+    const hitsBefore = tlsHits.length;
+    const pend = JSON.parse(await ex.ev(`(async () => {
+      const out = await TCExplainUI.show(${JSON.stringify(home)});
+      return JSON.stringify({ kind: out.kind, docs: out.docs, origins: out.origins, permHidden: document.getElementById('permission').hidden, perm: document.getElementById('perm-text').textContent,
+        btn: document.getElementById('perm-go').textContent, resultHidden: document.getElementById('result').hidden, status: document.getElementById('status').textContent,
+        granted: (await chrome.permissions.getAll()).origins || [] });
+    })()`));
+    assert.equal(pend.kind, 'permission'); assert.deepEqual(pend.docs, ['Terms', 'Privacy', 'Cookies', 'Community rules']);
+    assert.deepEqual(pend.origins, ['https://docs.newsco.test/*']);
+    assert.equal(pend.permHidden, false); assert.equal(pend.resultHidden, true);
+    assert.match(pend.perm, /Chrome will ask you once to allow access to that site/); assert.match(pend.btn, /Read these 4 documents/);
+    assert.match(pend.status, /agree dialog/); assert.match(pend.status, /will not click it/);
+    assert.deepEqual(pend.granted, []); assert.equal(tlsHits.length, hitsBefore, 'nothing was fetched before the user approved the site');
+    ok('real manifest: dialog found -> a "Read these 4 documents" button, no site access, zero requests to the document server until approved');
+
+    if (process.env.TC_SHOT) { const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT.replace(/\.png$/, '-permission.png'), Buffer.from(sh.data, 'base64')); }
+    // A real mouse click (CDP Input events count as a user gesture) makes the window ask Chrome for the site access. Headless Chrome shows no
+    // prompt UI, so the request just stays pending: all we can check here is that nothing is fetched without the user's answer.
+    {
+      const r = JSON.parse(await ex.ev("JSON.stringify(document.getElementById('perm-go').getBoundingClientRect())"));
+      for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: r.x + r.width / 2, y: r.y + r.height / 2, button: 'left', clickCount: 1 }, ex.sessionId);
+      await new Promise((r2) => setTimeout(r2, 1500));
+      assert.equal(tlsHits.length, hitsBefore, 'clicking asks Chrome for access; without an answer nothing is fetched');
+      assert.deepEqual((JSON.parse(await ex.ev('chrome.permissions.getAll().then((a) => JSON.stringify(a))')).origins) || [], []);
+    }
+    // (4b) the permission itself needs a real click + Chrome's prompt. A headless run cannot answer that prompt, so the full flow runs on a
+    // copy of the extension whose ONLY change is that the same https://*/* is granted up front (host_permissions instead of optional).
+    const grantedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-ext-granted-'));
+    fs.cpSync(EXT, grantedDir, { recursive: true });
+    const gm = JSON.parse(fs.readFileSync(path.join(grantedDir, 'manifest.json'), 'utf8'));
+    gm.host_permissions = gm.optional_host_permissions; delete gm.optional_host_permissions;
+    fs.writeFileSync(path.join(grantedDir, 'manifest.json'), JSON.stringify(gm, null, 2));
+    const { id: gid } = await send('Extensions.loadUnpacked', { path: grantedDir });
+    await send('Storage.setCookies', { cookies: [{ name: 'session', value: 'secret-session-cookie', domain: 'docs.newsco.test', path: '/', secure: true }] });
+    const gx = await openTab(`chrome-extension://${gid}/explain/explain.html`);
+    await gx.ev('TCDB.clearAll().then(() => localStorage.clear())');
+    const gview = async (res, extra) => JSON.parse(await gx.ev(`(async () => {
+      const out = await TCExplainUI.show(${JSON.stringify(res)});
+      const point = (li) => ({ sec: li.closest('ul').id, cls: li.className.split(' ').pop(), line: li.querySelector('.line .text').textContent, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '',
+        open: li.querySelector('details').open, labels: [...li.querySelectorAll('details .label')].map((n) => n.textContent), quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent), visible: [...li.querySelectorAll('blockquote')].some((b) => b.checkVisibility()) });
+      return JSON.stringify({ kind: out.kind, read: out.read, unread: out.unread, status: document.getElementById('status').textContent, resultHidden: document.getElementById('result').hidden,
+        summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent), note: document.getElementById('overview-note').textContent,
+        points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map(point),
+        docsSummary: document.getElementById('docs-count').textContent, docsHidden: document.getElementById('docs-read').hidden, docsOpen: document.getElementById('docs-read').open,
+        docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')),
+        pwned: typeof window.__tcPwned, elems: document.querySelectorAll('img, iframe, object, embed, script:not([src])').length,
+        visibleText: document.getElementById('result').innerText, savedDocs: (await TCDB.listDocs()).length });
+    })()`));
+
+    const d = await gview(home);
+    assert.equal(d.kind, 'documents'); assert.equal(d.read, 4); assert.equal(d.resultHidden, false);
+    assert.match(d.status, /Read 4 documents\. Nothing was saved\./); assert.equal(d.savedDocs, 0);
+    assert.equal(d.summary.length, 3);
+    assert.match(d.summary[0], /: Terms, Privacy, Cookies, Community rules \(from the agree dialog\)\.$/);
+    const by = (re) => d.points.find((p) => re.test(p.line));
+    const sale = by(/sell your personal data/), arb = by(/private arbitration/), track = by(/track your activity/);
+    assert.ok(sale && sale.cls === 'sev-High' && sale.src === 'Privacy', 'data sale found in the Privacy policy');
+    assert.ok(arb && arb.src === 'Terms'); assert.ok(track && track.src === 'Terms + Privacy + Cookies', 'one tracking point, three sources: ' + (track && track.src));
+    assert.equal(new Set(d.points.map((p) => p.line)).size, d.points.length, 'no repeated point');
+    assert.ok(d.points.length <= 12);
+    assert.ok(d.points.every((p) => !p.open && !p.visible && p.quotes.length >= 1 && p.src), 'exact wording collapsed, every point labelled with its source');
+    assert.ok(track.labels.includes('From Terms:') && track.labels.includes('From Privacy:') && track.labels.includes('From Cookies:'));
+    assert.match(d.docsSummary, /Documents read \(4 of 4\)/); assert.equal(d.docsOpen, false); assert.equal(d.docItems.length, 4);
+    if (process.env.TC_DUMP) console.log(JSON.stringify({ summary: d.summary, status: d.status, points: d.points.map((p) => [p.cls, p.src, p.line]), docs: d.docItems }, null, 1));
+    ok('agree dialog -> ONE combined explanation of Terms + Privacy + Cookies + Community rules, source-labelled, deduplicated, wording collapsed');
+
+    // hostile linked document: its script / onerror must not run, its image must not load, its instructions are only data
+    assert.equal(d.pwned, 'undefined'); assert.equal(d.elems, 0);
+    assert.ok(!tlsHits.some((h) => /__should_never_load/.test(h.url)) && !site.hits.some((h) => /__should_never_load/.test(h.url)), 'no subresource of a fetched document was ever requested');
+    assert.ok(/Community rules/.test(d.summary[0]) && d.points.some((p) => /lasting, wide licence|close your account/.test(p.line) && /Community rules/.test(p.src)), 'but its legal content was still read');
+    ok('hostile linked document: no script, no onerror, no image load, no elements - only text');
+
+    // the requests the extension made
+    const mine = tlsHits.slice(hitsBefore);
+    assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/robots.txt', '/terms'], 'one request per document plus ONE robots.txt for the site, nothing else (no crawling, no favicon)');
+    for (const h of mine) {
+      assert.equal(h.headers.cookie, undefined, 'logged out: no cookies sent although one exists for the site');
+      assert.equal(h.headers.referer, undefined);
+      assert.ok(/^Mozilla\/5\.0/.test(h.headers['user-agent']) && !/terms|guide|tc-/i.test(h.headers['user-agent']), 'the browser\'s own User-Agent');
+      assert.equal(h.headers.authorization, undefined);
+    }
+    ok('requests: one GET per document + one robots.txt for the site, no cookies (even with a session cookie present), no Referer, default User-Agent');
+
+    // a JS-only linked document is said to be unreadable and its link is offered
+    const withJs = JSON.parse(JSON.stringify(home));
+    withJs.consent.links.push({ url: 'https://docs.newsco.test/subscriber-agreement', text: 'Subscriber Agreement', doc_type: 'other', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 });
+    withJs.consent.links.push({ url: 'http://127.0.0.1:1/internal', text: 'Internal Policy', doc_type: 'other', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 });
+    const j = await gview(withJs);
+    assert.equal(j.kind, 'documents'); assert.equal(j.read, 4); assert.equal(j.unread, 2);
+    assert.match(j.note, /Not read: .*needs JavaScript to show its text/); assert.match(j.note, /Internal Policy|Other 2|Other \(link not allowed/);
+    assert.ok(j.docItems.some((t) => /not read: needs JavaScript/.test(t) && /Open this page/.test(t)));
+    assert.ok(j.docItems.some((t) => /not read: link not allowed/.test(t)));
+    assert.ok(!tlsHits.some((h) => /internal/.test(h.url)));
+    ok('JS-only document -> "needs JavaScript" with its link offered; a non-https / loopback link is refused and never requested');
+
+    // robots.txt disallow and redirects: skipped / not followed, with the link offered, and the other documents still read
+    const withRedir = JSON.parse(JSON.stringify(home));
+    withRedir.consent.links = withRedir.consent.links.filter((l) => /\/(terms|privacy)$/.test(l.url));
+    for (const [pth, text] of [['blocked-by-robots', 'Blocked Policy'], ['moved-terms', 'Moved Terms'], ['moved-offsite', 'Offsite Terms']]) {
+      withRedir.consent.links.push({ url: 'https://docs.newsco.test/' + pth, text, doc_type: 'other', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 });
+    }
+    const before2 = tlsHits.length;
+    const rd = await gview(withRedir);
+    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 3);
+    assert.ok(rd.docItems.some((t) => /Blocked Policy/.test(t) && /not read: the site's robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.docItems));
+    assert.ok(rd.docItems.some((t) => /Moved Terms/.test(t) && /not read: the site sent this page to another address; redirects are not followed/.test(t) && /Open this page/.test(t)));
+    assert.ok(rd.docItems.some((t) => /Offsite Terms/.test(t) && /not read: the site sent this page to another address/.test(t) && /Open this page/.test(t)));
+    const hits2 = tlsHits.slice(before2).map((h) => h.url).sort();
+    assert.deepEqual(hits2, ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets (/redirect-trap and the same-site /terms hop) never requested; each redirecting URL requested once');
+    ok('robots.txt disallow -> page never requested, link + reason shown; redirects (same-site and off-site) are not followed, never requested, link shown; the rest still read');
+
+    // list mode: regional duplicates collapsed, three shown, the rest behind a toggle, and the dialog result still works for a banner
+    const pc = await runIn(site.base + '/privacy-center', {});
+    assert.ok(pc.links.filter((l) => l.doc_type === 'privacy').length >= 18, 'the raw page really lists 18+ privacy links');
+    const lv = JSON.parse(await gx.ev(`(async () => { const out = await TCExplainUI.show(${JSON.stringify(pc)});
+      return JSON.stringify({ kind: out.kind, items: [...document.querySelectorAll('#candidate-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')), shown: [...document.querySelectorAll('#candidate-list li')].filter((li) => !li.hidden).length, moreHidden: document.getElementById('candidate-more').hidden, allHidden: document.getElementById('candidate-all').hidden, status: document.getElementById('status').textContent }); })()`));
+    assert.equal(lv.kind, 'links'); assert.equal(lv.items.length, 4, 'not 18'); assert.equal(lv.shown, 3); assert.equal(lv.moreHidden, false);
+    assert.ok(lv.items.some((t) => /Privacy Policy/.test(t) && /17 other regional or language versions/.test(t) && /en-us/.test(t)), JSON.stringify(lv.items));
+    assert.equal(lv.items.filter((t) => /Privacy Policy/.test(t) && !/Workforce/.test(t)).length, 1, 'one Privacy Policy entry, not one per region');
+    const many = JSON.parse(JSON.stringify(pc)); many.links = ['terms', 'privacy', 'cookie-policy', 'community-guidelines', 'subscription-terms', 'arbitration-agreement'].map((n, i) => ({ url: 'https://x.example.test/' + n, text: ['Terms of Use', 'Privacy Policy', 'Cookie Policy', 'Community Guidelines', 'Subscription Terms', 'Arbitration Agreement'][i], doc_type: ['tos', 'privacy', 'cookies', 'other', 'tos', 'other'][i], confidence: 'high', language: 'en', is_pdf: false, score: 3 }));
+    const mv = JSON.parse(await gx.ev(`(async () => { await TCExplainUI.show(${JSON.stringify(many)}); const li = () => [...document.querySelectorAll('#candidate-list li')];
+      const before = li().filter((n) => !n.hidden).length; const total = li().length; const mb = document.getElementById('candidate-more'); const label = mb.textContent;
+      mb.click(); const after = li().filter((n) => !n.hidden).length; const label2 = mb.textContent; mb.click(); const again = li().filter((n) => !n.hidden).length;
+      return JSON.stringify({ before, total, label, after, label2, again, all: document.getElementById('candidate-all').hidden, explainBtns: document.querySelectorAll('#candidate-list button').length }); })()`));
+    assert.deepEqual([mv.before, mv.total, mv.label, mv.after, mv.label2, mv.again], [3, 6, 'Show 3 more', 6, 'Show fewer', 3]);
+    assert.equal(mv.all, false); assert.equal(mv.explainBtns, 12);
+    ok('list mode: 18 regional privacy links -> one entry (17 variants collapsed); long lists show 3 with a "Show more" toggle; "Explain this" per entry');
+
+    // a consent banner on a non-terms page and a plain article
+    const cv = await gview(cb);
+    assert.equal(cv.kind, 'documents'); assert.match(cv.summary[0], /Cookies, Privacy|Privacy, Cookies/); assert.match(cv.summary[0], /consent banner/);
+    ok('consent banner -> its Cookie and Privacy documents explained together');
+    const av = await gview(art);
+    assert.equal(av.kind, 'links'); assert.equal(av.resultHidden, true);
+    ok('no dialog on the page -> falls back to listing the page\'s legal links');
+
+    // a terms page itself wins over its own cookie banner (existing behaviour)
+    const hitsPre = tlsHits.length;
+    const tp = await gview(terms);
+    assert.equal(tp.kind, 'analysis'); assert.equal(tlsHits.length, hitsPre);
+    ok('a terms page is still explained from its own text (no extra fetches)');
+
+    // with the opt-in, fetched documents are saved; without it nothing is
+    await gx.ev("localStorage.setItem('tc.saveCopies','1')");
+    const sv = await gview(home);
+    assert.equal(sv.savedDocs, 4); assert.match(sv.status, /Copies were saved on this device because you turned that option on/);
+    await gx.ev("localStorage.removeItem('tc.saveCopies'); TCDB.clearAll()");
+    ok('fetched documents are saved only with the explicit "save copies" opt-in');
+
+    // the access can be removed again
+    const rv = await ex.ev("document.getElementById('revoke').click(), new Promise((r) => setTimeout(r, 400)).then(() => document.getElementById('status').textContent)");
+    assert.match(rv, /No extra site access is allowed right now|Removed access/);
+    ok('"Remove the site access I have allowed" is wired up');
+    if (process.env.TC_SHOT) {
+      await gview(home);
+      const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, gx.sessionId); fs.writeFileSync(process.env.TC_SHOT.replace(/\.png$/, '-dialog.png'), Buffer.from(shot.data, 'base64'));
+    }
+    try { fs.rmSync(grantedDir, { recursive: true, force: true }); } catch {}
+  }
 
   const nav = await popup.ev('JSON.stringify(performance.getEntriesByType("resource").map(r=>r.name).filter(n=>!n.startsWith("chrome-extension://")))');
   assert.equal(nav, '[]'); ok('popup made no non-extension network requests');

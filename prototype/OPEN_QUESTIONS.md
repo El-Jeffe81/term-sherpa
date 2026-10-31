@@ -30,3 +30,19 @@
 ## Decided
 - 2026-10-31: Jeff decided the dataset stays local, a file on each user's device with no central collection.
 - 2026-10-31: Jeff approved the security plan: save only the terms document (never the page the user is on), CLI refuses non-public targets at every hop, terms text is untrusted data with exact-quote verification. Implemented; see docs/SECURITY.md.
+
+## Explain phase: open decisions (added on branch wip/terms-explain)
+- **"Track what I've agreed to"**: parked, not built. It would store personal data (what, when, which version). Do you want it, and where would it live?
+- **Chrome built-in on-device AI (Prompt API)**: parked, not used. Do you approve trying it later as an optional extra?
+- **Legacy collection popup**: kept as an opt-in "Save copies" path and an advanced view. Keep, or retire it?
+- **Working name**: "Terms Guide" is still a placeholder.
+- **Context matrix**: which kinds of service move which findings up or down (see `CONTEXT_MATRIX` in `extension/core/rules.js`) is a set of judgement calls. Is a news site's limited liability really Low? Review the values, and the kinds of service (news, shopping, social, finance, app) for gaps. Optionally add a "Why it matters" toggle with the longer explanation (it is in the rules, currently not shown).
+- **Rule wording and severity**: needs your review, and a lawyer's review of the plain-English explanations before wide release.
+- **Optional host permission `https://*/*` (v0.3.0)**: needed so the Explain window can read the documents an agree dialog links to (they are usually on another host). Nothing is granted at install; Chrome asks once per site after the user's click, and it can be removed in Options. OK to ship this way? Alternative: no fetching (list the links only), or a fixed allow-list of legal-document hosts.
+- **robots.txt (v0.3.1, built)**: the Explain window reads `https://<site>/robots.txt` before a linked document (one extra guarded request per site per analysis, in memory only, user-agent `*`). A disallow skips the document and shows its link. Missing, unreadable, slow or redirecting robots.txt means allowed (fail-open) - is that the policy you want? The CLI is stricter (it refuses on 5xx/401/403). Note a site that redirects robots.txt (for example to `www.`) is treated as unreadable, i.e. allowed, because redirects are never followed.
+- **Redirects (v0.3.1, decision for Jeff)**: any redirect (including harmless ones like `/terms` to `/terms/`) makes a document "not read", with its link. The alternative, a `declarativeNetRequest` fence that lets same-site redirects through and blocks the rest before they go out, works (see `npm run probe:dnr`) but needs the install warning "Block content on any page". Which do you prefer? If the warning is acceptable the fence can be built as a follow-up; nothing else in the design needs to change.
+- **DNS rebinding / SSRF**: the address guard works on the URL text and cannot see DNS answers. The per-site Chrome prompt is the barrier. Acceptable?
+- **Severity floor**: arbitration, class-action/jury waiver, data sale/sharing and broad content licence never go below Medium. Is that the right list? (A rule that is Low by itself, such as ordinary service-provider sharing, stays Low.)
+- **Regional dedupe**: heuristic, prefers the browser language then US English; it can merge distinct regional policies (e.g. /privacy/ca vs /privacy/us). Should the user be able to pick the region?
+- **JavaScript-only documents** are reported as not read. Is a headless-render partner for those worth approving later?
+- **Real-site check**: the CNN dialog and Chrome's real permission prompt were not tested (headless limits); needs a manual run in headed Chrome.

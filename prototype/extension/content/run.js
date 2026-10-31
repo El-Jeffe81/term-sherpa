@@ -4,12 +4,15 @@
  * manifest. It reads the page the user is looking at, returns a result object
  * on globalThis.__tcResult for the popup to pick up, and sends nothing anywhere.
  *
- * Needs core/untrusted.js, core/extract.js and core/detect.js injected first.
+ * Needs core/untrusted.js, core/extract.js, core/detect.js and core/consent.js injected first.
  * Options come from globalThis.__tcOptions = { pickedType } (pickedType is set only when the user explicitly picked
  * this page's URL from the detected-links list).
  *
  * What it returns: the page's text ONLY when the page itself is a terms/privacy/EULA/cookie document (or the user
  * picked it) and is not an account/checkout-style page. Otherwise: just the detected legal links (text + URL).
+ * It also looks for an "I agree" dialog, cookie/consent banner, "I have read" checkbox or "By clicking ... you agree to"
+ * sentence (core/consent.js) and returns the labels of its buttons and the legal documents it links to. It only READS:
+ * it never clicks Agree, never ticks a box and never touches the dialog.
  * Collapsed sections (details/summary, aria-expanded accordions) are read from the DOM without clicking anything.
  */
 (function () {
@@ -32,7 +35,7 @@
     if (el.nodeType !== 1 || depth > 200 || budget.n-- <= 0) return null;
     var tag = el.tagName.toLowerCase();
     var attrs = {};
-    ['id', 'class', 'role', 'href', 'title', 'aria-label', 'aria-hidden', 'aria-expanded', 'aria-controls', 'hreflang', 'lang', 'name', 'style'].forEach(function (k) {
+    ['id', 'class', 'role', 'href', 'title', 'aria-label', 'aria-hidden', 'aria-expanded', 'aria-controls', 'hreflang', 'lang', 'name', 'style', 'type', 'aria-modal', 'open', 'for', 'value'].forEach(function (k) {
       var v = el.getAttribute && el.getAttribute(k);
       if (v !== null && v !== undefined) attrs[k] = v;
     });
@@ -43,6 +46,7 @@
       try {
         var cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') attrs.hidden = '1';
+        if (cs.position === 'fixed' || cs.position === 'sticky') attrs['data-tc-pos'] = cs.position; // overlays: modals, banners
       } catch (e) { /* ignore */ }
     }
     var kids = [];
@@ -57,7 +61,7 @@
 
   var S = TCUntrusted.sanitizeText;
   var isPdf = /^application\/pdf/i.test(document.contentType || '') || /\.pdf$/i.test(location.pathname);
-  var result = { ok: true, page: { title: S(document.title || '') }, links: [], extracted: null };
+  var result = { ok: true, page: { title: S(document.title || '') }, links: [], extracted: null, consent: { found: false, kind: null, buttons: [], links: [] } };
   try {
     if (isPdf) {
       // Nothing is read from a PDF here; the popup records only that a PDF exists and needs the pdftotext partner.
@@ -80,6 +84,15 @@
     result.links = links.map(function (l) {
       return { url: l.url, text: S(l.text), doc_type: l.doc_type, confidence: l.confidence, language: l.language, is_pdf: l.is_pdf };
     });
+
+    var cons = typeof TCConsent === 'object' ? TCConsent.find(tree, location.href) : { found: false, kind: null, buttons: [], links: [] };
+    result.consent = {
+      found: !!cons.found, kind: cons.kind,
+      buttons: cons.buttons.map(function (b) { return S(b).slice(0, 40); }),
+      links: cons.links.map(function (l) {
+        return { url: l.url, text: S(l.text), doc_type: l.doc_type, confidence: l.confidence, language: l.language, non_english: !!l.non_english, is_pdf: l.is_pdf, score: l.score };
+      })
+    };
 
     // Text leaves this function ONLY for a real terms page, or one whose URL the user picked from the link list.
     // Never for a legal hub, and never for an account/checkout/payment-style page.
