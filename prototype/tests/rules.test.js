@@ -690,5 +690,10 @@ test('data_sharing evidence: rights notes, headings, quoted defined terms and me
   assert.equal(f('Data transfer: You can request that we share your data directly with a third-party provider, provided this is technically possible.'), null, 'a user request');
   assert.notEqual(f('We may share your personal information with advertising partners for legal reasons and marketing, unless you opt out.'), null, 'advertisers/partners still count');
   assert.notEqual(f('We may disclose certain personal information to Advertising Companies in order to select advertisements shown on the service.'), null, 'a real advertiser disclosure still counts');
+  assert.equal(f('Apple\u2019s Privacy Policy does not apply to how third parties define personal data or how they use it.'), null, 'a note about third parties, not a disclosure');
+  assert.equal(f('If data will be shared with a third party, we require them to maintain the same protections over your data that we provide directly.'), null, 'a safeguard note');
+  assert.equal(f('Under certain circumstances, participants may be liable for the transfer of personal data from the EU, Switzerland and the UK to third parties outside the EU, Switzerland and the UK.'), null, 'a liability note');
+  { const sp = f('We may disclose your personal information to third-party service providers who perform tasks on our behalf.'); assert.ok(sp); assert.equal(sp.severity, 'Low', 'service providers are the lower-severity case'); }
+  assert.notEqual(f('Advertisers and other third parties may receive your personal information when you use the service.'), null, 'third parties receiving data still counts');
   assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });

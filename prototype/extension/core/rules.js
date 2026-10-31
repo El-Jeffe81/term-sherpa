@@ -43,6 +43,8 @@
   // nor is a disclosure to law enforcement or a court (no advertiser, partner or sale involved).
   var USER_CHOICE = r("\\b(with your consent|at your direction|you (choose|chose|decide|control)|if you (decide|choose)|you can (control|choose|decide)|depending on your settings|your choice)\\b");
   var LEGAL_ONLY = r("^(?![\\s\\S]*\\b(sell|sold|advertis\\w*|partners?|marketing|data brokers?)\\b)[\\s\\S]*\\b(law enforcement|legal reasons|legal process|legal obligations?|court orders?|subpoenas?|legal requests?)\\b");
+  // Sentences ABOUT third parties and safeguards (what the policy does not cover, what we require of them, liability for transfers abroad) are not a statement that data is passed on.
+  var SAFEGUARD_NOTE = r("\\b(does not apply|do not apply|we require (them|these|third|such)|same protections|(may be|are|is) liable|not responsible for|outside (of )?the (EU|European|EEA))\\b");
   var QUOTED_SOLD = r("[\\u201c\"']\\s*(sold|sell|sale)\\s*[\\u201d\"']");
   var NEG_SHARE = r("\\b(do not|does not|don't|doesn't|will not|won't|never)\\s+(\\w+\\s+){0,3}(share|disclose|provide|transfer)\\b.{0,80}\\b(third[- ]part|partners?|advertis)");
   var NOT_THEM = r("\\b(grant|grants|give|gives|granting)\\s+(to\\s+)?(you|users?|the user)\\b");
@@ -92,11 +94,11 @@
       patterns: [
         { all: [r('\\b(sell|sells|selling|sold|sale of|rent|rents|renting)\\b.{0,80}\\b(personal (data|information)|your (data|information)|user data|information about you|customer data|your details)')], severity: 'High', line: 'They may sell your personal data.' },
         { all: [r('\\b(personal (data|information)|your (data|information)|information about you)\\b.{0,100}\\b(is|are|may be|can be|will be)\\s+(sold|rented)\\b')], severity: 'High', line: 'They may sell your personal data.' },
-        { all: [r('\\b(share|shares|sharing|shared|disclose|discloses|disclosing|provide|provides|transfer|transfers|make available|give|gives)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you|usage data|your details|data about you)\\b.{0,140}\\b(third[- ]part(y|ies)|partners?|advertis\\w+|affiliates?|marketing|data brokers?|analytics providers?)')], severity: 'Medium' },
-        { all: [r('\\b(third[- ]part(y|ies)|advertis\\w+|data brokers?|marketing partners?|business partners?)\\b.{0,140}\\b(personal (data|information)|your (data|information)|information about you)\\b'), r('\\b(share|shared|sharing|disclose|disclosed|provide|provided|access|receive|receives|obtain|use)\\b')], severity: 'Medium' },
+        { all: [r('\\b(share|shares|sharing|shared|disclose|discloses|disclosing|provide|provides|transfer|transfers|make available|give|gives)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you|usage data|your details|data about you)\\b.{0,140}\\b(third[- ]part(y|ies)(?![- ]*(service|vendors?|processors?|contractors?|providers?))|partners?|advertis\\w+|affiliates?|marketing|data brokers?|analytics providers?)')], severity: 'Medium' },
+        { all: [r('\\b(third[- ]part(y|ies)|advertis\\w+|data brokers?|marketing partners?|business partners?)\\b.{0,60}\\b(may|can|will|could)\\s+(\\w+\\s+){0,2}(receive|obtain|access|collect|get|use)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you)\\b')], severity: 'Medium' },
         { all: [r('\\b(share|shares|sharing|disclose|discloses|disclosing)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you)\\b.{0,100}\\b(service providers?|vendors?|processors?|contractors?)\\b')], severity: 'Low', line: 'They share some of your data with companies that help run the service.' }
       ],
-      exclude: [NEG_SELL, NEG_SHARE, USER_MAY_NOT_SELL, MERGER_ONLY, MERGER_EVENT, RIGHTS_REQUEST, HEADING_ONLY, QUOTED_SOLD, USER_CHOICE, LEGAL_ONLY],
+      exclude: [NEG_SELL, NEG_SHARE, USER_MAY_NOT_SELL, MERGER_ONLY, MERGER_EVENT, RIGHTS_REQUEST, HEADING_ONLY, QUOTED_SOLD, USER_CHOICE, LEGAL_ONLY, SAFEGUARD_NOTE],
       explain: 'The company says it may sell your personal information or pass it to other companies (partners, advertisers, affiliates and similar). Once shared, your data is also handled under those companies\' rules, and it is hard to take back. Sharing with service providers who work for the company (hosting, payments) is usually less of a concern than selling or sharing for advertising.',
       line: 'They may share your data with other companies, such as advertisers or partners.'
     },
