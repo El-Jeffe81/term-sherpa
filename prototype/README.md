@@ -1,8 +1,8 @@
 # tc-prototype: local proof of concept for a free "terms guide" (working name, not decided)
 
 Phase: **Explain** (built on the consumption phase). Click the extension on a terms page and a window explains it in plain
-English: an overview, key risks ranked High / Medium / Low with the exact quoted sentence, and a short "What you're agreeing
-to" list. The analysis is **on-device fixed rules, not AI**: no model, no network, nothing sent anywhere, and **nothing is
+English, briefly: a 3-line overview, then one plain sentence per point (High / Medium first, lower concerns after), judged
+in the context of the kind of site. The exact wording is one click away. The analysis is **on-device fixed rules, not AI**: no model, no network, nothing sent anywhere, and **nothing is
 saved by default**. The older collection code (local dataset) is still there, off unless you opt in.
 Values: privacy first, protect humans, help humans. Informational tooling only, **not legal advice**.
 
@@ -41,9 +41,9 @@ No real site is scraped in tests.
 ## Explain: what you see and how it works
 Click the icon on a terms page. The window shows, top to bottom:
 1. A notice: **Informational, not legal advice**.
-2. **Overview in plain English**: word count and read time, what the service is, what you have to do (sentences copied from the document).
-3. **Key risks, highest first**: each card has a High / Medium / Low label, a plain-English explanation and the exact sentence from the page (checked word for word; anything that cannot be verified is dropped). Very long sentences are shown in exact pieces, marked "Shortened".
-4. **What you're agreeing to**: one short line per topic found.
+2. **Overview**, three short lines: the site and kind of document, the type of service it guessed (news, shopping, social, finance, app, or "not clear"), and the headline takeaway. No word counts or other filler.
+3. **Worth knowing** (High and Medium) and **Also agreeing to** (lower concern): one plain sentence per point, with a badge. Related points are merged (arbitration, class action and jury waiver are one line, e.g. "You can't sue them in a class action lawsuit." when that is all there is). A small note appears when the kind of service changed how much a point matters (limited liability is routine on a news site, so it is Low there, but High on a bank or shop).
+4. **Show exact wording** under each point (closed by default): the quote(s) from the page, checked word for word; anything that cannot be verified is dropped. Very long sentences are shown in exact pieces, marked "Shortened". Read the full terms on the page if you want more.
 5. If the page is not a terms page, it lists the terms links it found. Pick one, open it, click the icon again. Nothing is analysed until then.
 
 The 12 topics checked: forced arbitration, class-action waiver, jury trial waiver, data sold or shared, auto-renewal / recurring billing, the company changing the terms on its own, license to your content, liability limits and disclaimers, termination at will, governing law and venue, age requirements, tracking and cookies. The rules are in `extension/core/rules.js`; the engine is `extension/core/analyze.js`.
@@ -112,7 +112,7 @@ CLI behaviour:
 - Explain: the page is read on click with `activeTab`; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
 
 ## Known limitations (honest list)
-- Explain rules are sentence-level patterns: they can miss unusual wording or misread a sentence, and "nothing found" does not mean a term is absent. Severity is a rough guide. English only. Wording and severity have not had a lawyer's review. This is not legal advice.
+- The type-of-service guess can be wrong or "not clear", and the adjustments are judgement calls. Explain rules are sentence-level patterns: they can miss unusual wording or misread a sentence, and "nothing found" does not mean a term is absent. Severity is a rough guide. English only. Wording and severity have not had a lawyer's review. This is not legal advice.
 - Built-in extractor (heuristic, no Readability). It reads collapsed text that is in the DOM, but text a page only loads when you click (lazy-loaded via JS) is not captured. PDFs are detected but not read (needs the pdftotext partner). Chrome only. Link patterns cover English, Spanish, French, German, Portuguese and Italian only; the language guess for stored text uses stop words and says "unknown" for short text.
 - Chrome-removal rules are heuristics; `tc-collect quality` flags leftovers (for example cookie-banner lines) but cannot prove a page is clean. The live-smoke Wikimedia language list was fixed on fixtures; it has not been re-fetched live.
 - The SSRF guard protects a user-run CLI. It is not a hardened server component (see `docs/SECURITY.md`).

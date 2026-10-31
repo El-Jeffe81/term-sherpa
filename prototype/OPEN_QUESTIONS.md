@@ -36,4 +36,5 @@
 - **Chrome built-in on-device AI (Prompt API)**: parked, not used. Do you approve trying it later as an optional extra?
 - **Legacy collection popup**: kept as an opt-in "Save copies" path and an advanced view. Keep, or retire it?
 - **Working name**: "Terms Guide" is still a placeholder.
+- **Context matrix**: which kinds of service move which findings up or down (see `CONTEXT_MATRIX` in `extension/core/rules.js`) is a set of judgement calls. Is a news site's limited liability really Low? Review the values, and the kinds of service (news, shopping, social, finance, app) for gaps. Optionally add a "Why it matters" toggle with the longer explanation (it is in the rules, currently not shown).
 - **Rule wording and severity**: needs your review, and a lawyer's review of the plain-English explanations before wide release.
