@@ -21,26 +21,8 @@ if (!CHROME) { console.log('SKIP: no Chrome/Chromium found (set CHROME_BIN)'); p
 // A real https server for the documents an agree dialog links to (the extension fetches https only, never loopback http).
 // docs.newsco.test is mapped to it inside this throw-away Chrome only (--host-resolver-rules), with a self-signed certificate
 // (--ignore-certificate-errors). Nothing in the extension is relaxed for this: the production URL guard sees a normal https URL.
-const SITES_DIR = path.join(ROOT, 'tests', 'fixtures', 'sites');
-const tlsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-tls-'));
-const sslOk = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', path.join(tlsDir, 'k.pem'), '-out', path.join(tlsDir, 'c.pem'), '-days', '2', '-subj', '/CN=docs.newsco.test', '-addext', 'subjectAltName=DNS:docs.newsco.test'], { stdio: 'ignore' }).status === 0;
-const tlsHits = [];
-const TLS_ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.html', '/cookies': 'newsco/cookies.html', '/community-guidelines': 'newsco/community-guidelines.html', '/subscriber-agreement': 'newsco/subscriber-agreement.html' };
-const tls = sslOk ? await new Promise((resolve) => {
-  const srv = require('node:https').createServer({ key: fs.readFileSync(path.join(tlsDir, 'k.pem')), cert: fs.readFileSync(path.join(tlsDir, 'c.pem')) }, (req, res) => {
-    tlsHits.push({ url: req.url, headers: req.headers });
-    const u = req.url.split('?')[0];
-    if (u === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: googlebot\nDisallow: /\n\nUser-agent: *\nDisallow: /blocked-by-robots\n'); }
-    // redirects: one inside the site, one to another address that answers with CORS "*" (so a followed redirect would even be readable)
-    if (u === '/moved-terms') { res.writeHead(302, { location: '/terms' }); return res.end(); }
-    if (u === '/moved-offsite') { res.writeHead(302, { location: `https://127.0.0.1:${tls.address().port}/redirect-trap` }); return res.end(); }
-    if (u === '/redirect-trap') { res.writeHead(200, { 'content-type': 'text/html', 'access-control-allow-origin': '*' }); return res.end('<html><body>trap</body></html>'); }
-    const f = u === '/blocked-by-robots' ? 'newsco/terms.html' : TLS_ROUTES[u];
-    if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f)));
-  });
-  srv.listen(0, '127.0.0.1', () => resolve(srv));
-}) : null;
+const docsTls = await require('../helpers/docs-tls.js').startDocsTls(); // null when openssl is missing
+const tls = docsTls && docsTls.server; const tlsHits = docsTls ? docsTls.hits : [];
 const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MAP docs.newsco.test 127.0.0.1:${tls.address().port}`] : [];
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chrome-'));
@@ -55,7 +37,7 @@ const site = await startSite({ routes: {
   '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }, '/news/terms': { file: 'newsco/terms.html' },
   '/home': { file: 'newsco/home.html' }, '/cookie-banner': { file: 'newsco/cookie-banner.html' }, '/article': { file: 'newsco/article.html' }, '/privacy-center': { file: 'mediaco/privacy-center.html' }
 } });
-const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); if (tls) { tls.closeAllConnections(); tls.close(); } try { fs.rmSync(tlsDir, { recursive: true, force: true }); } catch {} try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
+const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); if (docsTls) docsTls.close(); try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
 process.on('exit', () => { try { chrome.kill('SIGKILL'); } catch {} });
 
 let id = 0; const pending = new Map(); const exceptions = [];
