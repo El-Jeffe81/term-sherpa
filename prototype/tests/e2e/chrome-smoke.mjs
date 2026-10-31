@@ -242,6 +242,7 @@ try {
   assert.equal(vCalm.kind, 'analysis'); assert.equal(vCalm.points.length, 0, JSON.stringify(vCalm.points));
   assert.equal(vCalm.nothing.hidden, false); assert.equal(vCalm.nothing.text, "Nothing found doesn't mean there's no risk.");
   assert.match(vCalm.visibleText, /Nothing found doesn't mean there's no risk\./);
+  assert.equal(await ex.ev(`getComputedStyle(document.getElementById('nothing-found')).fontWeight`), '700', 'the "nothing found" line is bold');
   if (process.env.TC_REVIEW) { await ex.ev(`document.getElementById('welcome').hidden = true`); await rshot(ex, 'nothing-found'); }
   ok('a terms text with no risk points still shows "Nothing found doesn\'t mean there\'s no risk." (and the line is hidden when risks are listed)');
 
@@ -284,18 +285,18 @@ try {
       const b = document.getElementById('again'); b.replaceWith(b.cloneNode(true));
       const orig = chrome.tabs.query.bind(chrome.tabs);
       chrome.tabs.query = (q) => (q && q.active ? Promise.resolve([{ id: ${pgId}, url: 'https://docs.newsco.test/news/terms' }]) : orig(q));
-      document.getElementById('status').textContent = '';
+      document.getElementById('status').textContent = ''; document.getElementById('status').hidden = false;
       window.__closed = 0; window.close = () => { window.__closed++; };
       (0, eval)(${JSON.stringify('')} + ${JSON.stringify(src)});
       await new Promise((r) => setTimeout(r, 800));
       const btn = document.getElementById('again');
-      return JSON.stringify({ status: document.getElementById('status').textContent, btn: btn.textContent, hidden: btn.hidden });
+      return JSON.stringify({ status: document.getElementById('status').textContent, statusHidden: document.getElementById('status').hidden, btn: btn.textContent, hidden: btn.hidden });
     })()`));
     const seesOwn = JSON.parse(await launcher.ev(`chrome.tabs.query({}).then((ts) => JSON.stringify(ts.some((x) => (x.url || '').includes('/explain/explain.html?tab=${pgId}'))))`));
     if (!seesOwn && VIA_OPENER) {
       // Vivaldi hides every tab address from extensions that lack the tabs permission, so the launcher cannot know; it must fall back to its normal state
-      assert.equal(out.status, 'The explanation window is open.'); assert.equal(out.hidden, false);
-      ok('launcher (this browser hides tab addresses from the extension): falls back to the normal "The explanation window is open." state with the button');
+      assert.equal(out.status, ''); assert.equal(out.statusHidden, true); assert.equal(out.hidden, false); assert.equal(out.btn, 'Open the explanation window');
+      ok('launcher (this browser hides tab addresses from the extension): falls back to a button only (no sentence): "Open the explanation window"');
     } else {
       assert.equal(out.status, 'Your explanation window is already open'); assert.equal(out.btn, 'Bring it to the front'); assert.equal(out.hidden, false);
       if (process.env.TC_REVIEW) { // the toolbar popup in its real already-open state, at popup width

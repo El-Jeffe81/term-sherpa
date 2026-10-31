@@ -218,4 +218,5 @@ test('explain: "Nothing found doesn\'t mean there\'s no risk." is shown exactly 
   assert.match(html, /<p id="nothing-found"[^>]*\bhidden\b[^>]*>Nothing found doesn't mean there's no risk\.<\/p>/, 'hidden by default, exact wording');
   const js = explainSrc();
   assert.match(js, /\$\('nothing-found'\)\.hidden = risk\.length !== 0 \|\| also\.length !== 0;/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'extension', 'explain', 'explain.css'), 'utf8'), /\.nothing-found \{[^}]*font-weight: 700;/, 'the "nothing found" line is bold');
 });

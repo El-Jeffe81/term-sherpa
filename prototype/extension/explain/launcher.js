@@ -48,7 +48,7 @@
     tabId = tab.id;
     var existing = await findOpen();
     if (existing) {
-      status.textContent = 'Your explanation window is already open';
+      status.textContent = 'Your explanation window is already open'; status.hidden = false;
       again.textContent = 'Bring it to the front';
       again.hidden = false;
       onAgain = function () {
@@ -57,7 +57,8 @@
       return;
     }
     await openExplain();
-    status.textContent = 'The explanation window is open.';
+    // nothing more to say: just the button (to open it again)
+    status.textContent = ''; status.hidden = true;
     again.hidden = false;
   }
 

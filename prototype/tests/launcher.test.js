@@ -35,7 +35,7 @@ test('launcher: opens a popup window when the browser has windows.create', async
 test('launcher: falls back to a tab when windows.create is missing (Firefox for Android)', async () => {
   const { calls, els } = await run(() => ({}));
   assert.deepEqual(calls, [['tabs.create', 'moz-extension://x/explain/explain.html?tab=7']]);
-  assert.equal(els.status.textContent, 'The explanation window is open.');
+  assert.equal(els.status.textContent, '', 'no sentence in this state, only the button'); assert.equal(els.status.hidden, true); assert.equal(els.again.hidden, false);
 });
 
 test('launcher: falls back to a tab when windows.create rejects', async () => {
@@ -58,6 +58,6 @@ test('launcher: an explanation window open for a different page (or tab 70 vs 7)
   const open = [{ id: 98, windowId: 4, url: 'moz-extension://x/explain/explain.html?tab=70' }, { id: 97, windowId: 3, url: 'https://example.com/explain/explain.html?tab=7' }, { id: 96, windowId: 2 }];
   const { calls, els } = await run(() => ({}), open);
   assert.deepEqual(calls, [['tabs.create', 'moz-extension://x/explain/explain.html?tab=7']]);
-  assert.equal(els.status.textContent, 'The explanation window is open.');
+  assert.equal(els.status.textContent, ''); assert.equal(els.status.hidden, true);
   assert.equal(els.again.textContent, 'Open the explanation window');
 });

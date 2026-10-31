@@ -681,9 +681,14 @@ test('data_sharing evidence: rights notes, headings, quoted defined terms and me
   assert.equal(f('You have the right to request that we disclose: the categories of third parties to whom we disclose, sell, or share personal information; and the categories of personal information we have disclosed, sold, or shared about you for a business or commercial purpose.'), null, 'a "right to request" note');
   assert.equal(f('Using these choices will not opt you out of the use of previously \u201csold\u201d (as defined by some US State Privacy Laws) personal information, or stop all Behavioral Advertising.'), null, 'a quoted, defined term');
   assert.equal(f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy.'), null, 'a merger event');
-  // what is left for X: only the sentence that really says it shares with partners, as a lower-severity share risk (not "sell")
-  const x = f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy. And no, we don\u2019t sell your personal information. You can control whether X shares your personal information with these partners by using the \u201cData sharing with business partners\u201d option in your Privacy and Safety settings.');
-  assert.ok(x, 'the share sentence is kept'); assert.equal(x.evidence.length, 1); assert.match(x.evidence[0].quote, /^You can control whether X shares your personal information with these partners/);
-  assert.notEqual(x.line, 'They may sell your personal data.');
+  // the X privacy wording as a whole: a merger event, a denial and a user-controlled option leave nothing to quote, so no risk is raised
+  assert.equal(f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy. And no, we don\u2019t sell your personal information. You can control whether X shares your personal information with these partners by using the \u201cData sharing with business partners\u201d option in your Privacy and Safety settings.'), null);
+  assert.equal(f('We share or disclose your information with your consent or at your direction, such as when you authorize a third-party web client or application to access your account.'), null, 'sharing the user chose');
+  assert.equal(f('Depending on your settings, or if you decide to share your data, we may share or disclose your information with third parties.'), null, 'sharing the user chose');
+  assert.equal(f('Other people with whom you choose to share your information, like docs or photos, videos or comments on YouTube.'), null, 'user-chosen sharing');
+  assert.equal(f('Law enforcement or other third parties, for the legal reasons described in Sharing your information.'), null, 'a legal disclosure');
+  assert.equal(f('Data transfer: You can request that we share your data directly with a third-party provider, provided this is technically possible.'), null, 'a user request');
+  assert.notEqual(f('We may share your personal information with advertising partners for legal reasons and marketing, unless you opt out.'), null, 'advertisers/partners still count');
+  assert.notEqual(f('We may disclose certain personal information to Advertising Companies in order to select advertisements shown on the service.'), null, 'a real advertiser disclosure still counts');
   assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });
