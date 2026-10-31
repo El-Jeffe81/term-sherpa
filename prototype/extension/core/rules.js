@@ -26,6 +26,9 @@
   function r(src) { return new RegExp(src, I); }
 
   var NEG_SELL = r("\\b(do not|does not|don't|doesn't|will not|won't|never|not|no longer)\\s+(\\w+\\s+){0,3}(sell|sale|sold|rent)\\b");
+  // A rule aimed at the USER ("You may not use the API ... for selling users' personal information"): not the company selling anything.
+  // (But "you may not opt out of the sale ..." still counts: those verbs are excluded from the pattern.)
+  var USER_MAY_NOT_SELL = r("\\b(you|users?|customers?)\\s+(may|must|shall|can|will)\\s+not\\b(?!\\s+(opt|object|limit|stop|prevent|refuse|withdraw|restrict|decline)\\b).{0,200}\\b(selling|sell|sale of|sold|renting)\\b");
   var NEG_SHARE = r("\\b(do not|does not|don't|doesn't|will not|won't|never)\\s+(\\w+\\s+){0,3}(share|disclose|provide|transfer)\\b.{0,80}\\b(third[- ]part|partners?|advertis)");
   var NOT_THEM = r("\\b(grant|grants|give|gives|granting)\\s+(to\\s+)?(you|users?|the user)\\b");
   var SUBJECT_YOU_CANCEL = r("\\byou\\s+(may|can|are free to|have the right to)\\s+(\\w+\\s+){0,2}(cancel|close|delete|deactivate|terminate|stop)\\b");
@@ -78,7 +81,7 @@
         { all: [r('\\b(third[- ]part(y|ies)|advertis\\w+|data brokers?|marketing partners?|business partners?)\\b.{0,140}\\b(personal (data|information)|your (data|information)|information about you)\\b'), r('\\b(share|shared|sharing|disclose|disclosed|provide|provided|access|receive|receives|obtain|use)\\b')], severity: 'Medium' },
         { all: [r('\\b(share|shares|sharing|disclose|discloses|disclosing)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you)\\b.{0,100}\\b(service providers?|vendors?|processors?|contractors?)\\b')], severity: 'Low', line: 'They share some of your data with companies that help run the service.' }
       ],
-      exclude: [NEG_SELL, NEG_SHARE],
+      exclude: [NEG_SELL, NEG_SHARE, USER_MAY_NOT_SELL],
       explain: 'The company says it may sell your personal information or pass it to other companies (partners, advertisers, affiliates and similar). Once shared, your data is also handled under those companies\' rules, and it is hard to take back. Sharing with service providers who work for the company (hosting, payments) is usually less of a concern than selling or sharing for advertising.',
       line: 'They may share your data with other companies, such as advertisers or partners.'
     },

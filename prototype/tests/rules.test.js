@@ -649,3 +649,13 @@ test('languageNote: only documents that say they are not English get the note', 
   assert.match(A.languageNote([{ lang: 'fr' }, { lang: 'de-DE' }]), /^ Some documents are not in English/);
   assert.equal(A.languageNote(undefined), '');
 });
+
+test('data_sharing: a rule aimed at the user ("you may not use the API for selling users\' personal information") is not the company selling data; real sale clauses still are', () => {
+  const has = (t) => require('../extension/core/analyze').analyze(t, {}).findings.some((f) => f.id === 'data_sharing');
+  assert.equal(has("You may not use the API to download data or Content from GitHub for spamming purposes, including for the purposes of selling GitHub users' personal information, such as to recruiters, headhunters, and job boards."), false);
+  assert.equal(has('Users must not sell the personal information of other users.'), false);
+  assert.equal(has('We do not sell your personal information.'), false);
+  assert.equal(has('We may sell your personal information to other companies.'), true);
+  assert.equal(has('You agree that we may sell your personal information to partners.'), true);
+  assert.equal(has('You may not opt out of the sale of your personal information.'), true);
+});
