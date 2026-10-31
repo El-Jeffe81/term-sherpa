@@ -9,7 +9,7 @@ const base = require('../extension/manifest.json');
 
 test('firefox manifest = shared manifest + browser_specific_settings only', () => {
   const f = firefoxManifest(base);
-  assert.equal(f.browser_specific_settings.gecko.id, 'terms-guide@el-jeffe81.github.io');
+  assert.equal(f.browser_specific_settings.gecko.id, undefined);
   assert.ok(parseInt(f.browser_specific_settings.gecko.strict_min_version, 10) >= 140);
   assert.deepEqual(f.browser_specific_settings.gecko.data_collection_permissions, { required: ['none'] });
   const rest = Object.assign({}, f); delete rest.browser_specific_settings;

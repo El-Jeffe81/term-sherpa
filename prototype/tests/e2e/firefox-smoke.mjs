@@ -22,7 +22,9 @@ const FIREFOX = process.env.FIREFOX_BIN || which('firefox');
 const GECKODRIVER = process.env.GECKODRIVER_BIN || which('geckodriver');
 if (!FIREFOX || !GECKODRIVER) { console.log('SKIP: Firefox or geckodriver not found (set FIREFOX_BIN and GECKODRIVER_BIN)'); process.exit(0); }
 
-const ADDON_ID = 'terms-guide@el-jeffe81.github.io';
+// Test-only ID: the shipped package has no add-on ID yet (Jeff decides it before publishing), so this run gives a throw-away copy one
+// to make moz-extension://<uuid>/ predictable. The real dist/firefox is not changed.
+const ADDON_ID = 'tc-e2e-test@example.invalid';
 const UUID = '5e1f6c7a-0b9d-4c1e-8a57-3f2d9c4b6a10'; // pinned so moz-extension://<uuid>/ is predictable
 const pkg = build('firefox'); // the real Firefox package, built from the shared source
 const docsTls = await startDocsTls();
@@ -70,7 +72,11 @@ try {
   const switchTo = (h) => call('POST', S('/window'), { handle: h });
   const waitFor = async (what, fn, ms = 20000) => { const t = Date.now(); let last; while (Date.now() - t < ms) { try { last = await fn(); if (last) return last; } catch (e) { last = e.message; } await sleep(150); } throw new Error('timed out waiting for ' + what + (last ? ' (' + String(last).slice(0, 200) + ')' : '')); };
   const text = (id) => exec('return document.getElementById(arguments[0]).textContent', [id]);
-  const addonDir = pkg.dir;
+  const addonDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'tc-ff-e2e-'));
+  fs.cpSync(pkg.dir, addonDir, { recursive: true });
+  { const mf = path.join(addonDir, 'manifest.json'); const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
+    assert.equal(m.browser_specific_settings.gecko.id, undefined, 'shipped Firefox package must not set an add-on ID yet');
+    m.browser_specific_settings.gecko.id = ADDON_ID; fs.writeFileSync(mf, JSON.stringify(m, null, 2)); }
 
   const certRes = await chromeAsync(`const b64 = args[0].replace(/-----[A-Z ]+-----/g, '').replace(/\\s+/g, ''); const db = Cc['@mozilla.org/security/x509certdb;1'].getService(Ci.nsIX509CertDB); db.addCertFromBase64(b64, 'CT,C,C'); return 'added';`, [docsTls.certPem]);
   assert.equal(certRes, 'added', 'test CA imported into the throw-away profile: ' + JSON.stringify(certRes));
@@ -113,7 +119,7 @@ try {
   await chromeExec('gBrowser.removeTab(gBrowser.selectedTab); gBrowser.selectedTab = gBrowser.tabs[0]; return 1');
   await switchTo(tab0);
   const hBefore = new Set(await handles());
-  const wid = 'terms-guide_el-jeffe81_github_io-browser-action';
+  const wid = 'tc-e2e-test_example_invalid-browser-action';
   const clicked = await chromeAsync(`const node = CustomizableUI.getWidget(args[0]).forWindow(window).node; const btn = node.querySelector('.unified-extensions-item-action-button');
     await window.gUnifiedExtensions.openPanel(null, 'extension_browser_action_popup');
     btn.dispatchEvent(new window.CustomEvent('command', { bubbles: true, cancelable: true, detail: { openPopupWithoutUserInteraction: false } }));

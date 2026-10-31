@@ -8,7 +8,7 @@
  *
  * Both packages contain exactly the same files as extension/. They differ ONLY in manifest.json:
  *   chrome  = extension/manifest.json unchanged (it is also what "Load unpacked" on extension/ uses; works in Edge, Brave, Opera, Vivaldi)
- *   firefox = extension/manifest.json + manifests/firefox.overlay.json (browser_specific_settings.gecko, data_collection_permissions, ...)
+ *   firefox = extension/manifest.json + manifests/firefox.overlay.json (browser_specific_settings.gecko minimum versions, data_collection_permissions, ...)
  *             and, if the shared manifest ever has background.service_worker, it becomes background.scripts (Firefox MV3 format).
  * The zips are reproducible (sorted entries, fixed timestamps) so the same source always gives the same bytes.
  * The build never deletes anything: it overwrites files in dist/<target>/ and stops with a message if dist/<target>/ holds a

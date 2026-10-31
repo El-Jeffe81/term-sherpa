@@ -3,7 +3,7 @@
 // Validates the manifest against the hard rules.
 //   node tests/validate-manifest.js          -> extension/ (source) AND the built dist/chrome and dist/firefox packages (builds them first)
 //   node tests/validate-manifest.js source   -> extension/ only
-// The Firefox package gets the same hard rules plus Firefox-only checks (gecko id, min version, data consent, no service worker).
+// The Firefox package gets the same hard rules plus Firefox-only checks (no fixed add-on ID yet, min version, data consent, no service worker).
 const fs = require('node:fs');
 const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
@@ -68,7 +68,7 @@ function validate(EXT, target) {
 
   if (target === 'firefox') {
     const g = ((m.browser_specific_settings || {}).gecko) || {};
-    ok(/^[^@\s]*@[A-Za-z0-9._-]+$/.test(g.id || ''), 'firefox: browser_specific_settings.gecko.id must look like name@domain (or {uuid})');
+    ok(!('id' in g), 'firefox: gecko.id must stay unset until Jeff decides the add-on ID');
     ok(parseInt(g.strict_min_version, 10) >= 140, 'firefox: gecko.strict_min_version must be >= 140 (data_collection_permissions needs Firefox 140)');
     ok(JSON.stringify((g.data_collection_permissions || {}).required) === JSON.stringify(['none']) && !(g.data_collection_permissions || {}).optional, 'firefox: data_collection_permissions must be {required:["none"]} (nothing collected or sent)');
     ok(!(m.background && m.background.service_worker), 'firefox: background.service_worker is not supported (use background.scripts)');

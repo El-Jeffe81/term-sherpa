@@ -31,15 +31,15 @@ is a deliberate step for the owner and was not run here.
 Account: a free Mozilla account at addons.mozilla.org; there is no developer fee. Review is automatic first, with human review possible afterwards.
 
 Before the first submission:
-- **The add-on ID is permanent once published.** `prototype/manifests/firefox.overlay.json` currently says `terms-guide@el-jeffe81.github.io`
-  (an email-style ID on a domain tied to the owner's GitHub name). Confirm it, or change it, **before** the first upload; changing it later makes a different add-on.
+- **Add-on ID: open decision for Jeff.** No ID is set yet (`browser_specific_settings.gecko.id` is left out on purpose). AMO needs one before
+  the first upload, and it is permanent once published. Firefox gives the add-on a temporary ID for local testing.
 - `data_collection_permissions` is already `{"required": ["none"]}` (the extension collects and transmits nothing); AMO requires this declaration for new add-ons. Keep it truthful.
 - The name is still "Terms Guide (working name)" (OPEN_QUESTIONS #3). Pick the real name first.
 - The manifest has no `icons`. AMO will use a default icon; a real icon is strongly recommended for a listing (and required by the other stores).
 - Prepare a short description, a longer description, a privacy statement ("no data collected; runs on your device; optional saved copies stay in the browser"), and a licence. The licence is undecided (OPEN_QUESTIONS #4); AMO asks for one.
 
 Steps (listed on AMO):
-1. `npm run build:firefox` and `npm run lint:firefox` (expect 0 errors).
+1. `npm run build:firefox` and `npm run lint:firefox`. Until the add-on ID is chosen, it reports one expected error, `ADDON_ID_REQUIRED`; after the ID is set, expect 0 errors.
 2. Sign in at addons.mozilla.org -> **Developer Hub** -> **Submit a New Add-on**.
 3. Choose **On this site** (listed). Upload `terms-guide-<version>-firefox.zip`.
 4. Source code: the package is the plain, unminified source with no build step, so there is no separate source to upload.
