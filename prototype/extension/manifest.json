@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Term Sherpa",
-  "version": "0.3.1",
+  "version": "1.0.0",
   "description": "Explains the terms, privacy policy or 'I agree' dialog you are on in plain English, on this device. Nothing saved by default.",
   "action": {
     "default_title": "Term Sherpa: explain this page",

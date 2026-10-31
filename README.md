@@ -9,3 +9,8 @@ One source builds a Chrome-family package and a Firefox package (`cd prototype &
 - Browser testing: [docs/BROWSER_TESTING.md](docs/BROWSER_TESTING.md)
 - Firefox for Android review: [docs/FIREFOX_ANDROID.md](docs/FIREFOX_ANDROID.md)
 - Free publishing routes (nothing published yet): [docs/PUBLISHING.md](docs/PUBLISHING.md)
+
+## License
+Term Sherpa is free software under the GNU General Public License, version 3 only (GPL-3.0-only). See [LICENSE](LICENSE).
+
+Copyright (C) 2026 El-Jeffe81

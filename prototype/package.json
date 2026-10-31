@@ -1,9 +1,9 @@
 {
-  "name": "tc-prototype",
-  "version": "0.1.0",
-  "description": "Local proof of concept: collect terms/privacy/EULA/cookie text into a local dataset (Chrome MV3 extension + Node CLI). Product name: Term Sherpa.",
+  "name": "term-sherpa",
+  "version": "1.0.0",
+  "description": "Term Sherpa: a free browser extension (Chrome-family MV3 + Firefox desktop/Android) that explains terms of service, privacy policies and 'I agree' banners in plain English, on-device.",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-only",
   "engines": {
     "node": ">=22.13"
   },
