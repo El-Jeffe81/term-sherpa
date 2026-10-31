@@ -60,7 +60,10 @@ function validate(EXT, target) {
     const src = fs.readFileSync(path.join(EXT, js), 'utf8');
     const inj = /INJECT_FILES\s*=\s*\[([^\]]+)\]/.exec(src);
     ok(!!inj, js + ' must list INJECT_FILES');
-    if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) ok(fs.existsSync(path.join(EXT, f)), js + ': missing injected file: ' + f);
+    if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) {
+      ok(f.startsWith('/'), js + ': injected file must start with "/" (extension root); Firefox resolves bare paths against the calling page: ' + f);
+      ok(fs.existsSync(path.join(EXT, f)), js + ': missing injected file: ' + f);
+    }
   }
 
   if (target === 'firefox') {

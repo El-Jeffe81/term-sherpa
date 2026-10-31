@@ -8,7 +8,8 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var TYPE_LABEL = { tos: 'Terms', privacy: 'Privacy', eula: 'EULA', cookies: 'Cookies', other: 'Other' };
-  var INJECT_FILES = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'];
+  // Leading slash = relative to the extension root in every browser. Without it Firefox resolves the path against the calling page (explain/ or popup/) and the injection fails.
+  var INJECT_FILES = ['/core/untrusted.js', '/core/extract.js', '/core/detect.js', '/core/consent.js', '/content/run.js'];
 
   function setStatus(msg, isErr) {
     var s = $('status'); s.textContent = msg; s.className = isErr ? 'err' : '';

@@ -18,7 +18,8 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var INJECT_FILES = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'];
+  // Leading slash = relative to the extension root in every browser. Without it Firefox resolves the path against the calling page (explain/ or popup/) and the injection fails.
+  var INJECT_FILES = ['/core/untrusted.js', '/core/extract.js', '/core/detect.js', '/core/consent.js', '/content/run.js'];
   var SHOW_LINKS = 3; // list mode: this many, the rest behind "Show more"
   var pending = null; // documents waiting for the user's OK to read them: { links, ctx }
   var SAVE_KEY = 'tc.saveCopies';
