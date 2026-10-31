@@ -4,7 +4,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { analyze, splitSentences } = require('../extension/core/analyze');
-const { RULES } = require('../extension/core/rules');
+const { RULES, GROUPS, CONTEXT_MATRIX } = require('../extension/core/rules');
+const TCContext = require('../extension/core/context');
 const { verifyQuote } = require('../extension/core/quote');
 const E = require('../extension/core/extract');
 const { parseHtml } = require('../cli/src/htmltree');
@@ -12,7 +13,8 @@ const { read } = require('./helpers/server');
 
 const FILLER = 'Welcome to the Example service. These terms describe how you may use the service. ';
 const run = (s) => analyze(FILLER + s, { doc_type: 'tos', host: 'example.test' });
-const find = (a, id) => a.findings.find((f) => f.id === id);
+const find = (a, id) => a.ruleHits.find((f) => f.id === id); // raw per-rule hit, before merging and context
+const item = (a, id) => a.findings.find((f) => f.id === id || f.rules.includes(id)); // what the user sees
 const sev = (s, id) => { const f = find(run(s), id); return f ? f.severity : null; };
 
 // id -> { pos: [[sentence, expectedSeverity]], neg: [sentence] }
@@ -187,12 +189,13 @@ const CASES = {
   }
 };
 
-test('every rule in rules.js has fixtures here, plus a plain-English explanation and an agreeing line', () => {
+test('every rule in rules.js has fixtures here, plus a plain-English explanation and a one-sentence line', () => {
   assert.deepEqual(Object.keys(CASES).sort(), RULES.map((r) => r.id).sort());
   assert.ok(RULES.length >= 12);
   for (const r of RULES) {
     assert.ok(r.explain && r.explain.length > 60, r.id + ' needs a plain-English explanation');
-    assert.ok(r.agreeing && r.agreeing.length > 10, r.id + ' needs an agreeing line');
+    assert.ok(r.line && r.line.length > 10 && r.line.length < 120 && !/\n/.test(r.line), r.id + ' needs a one-sentence line');
+    assert.ok(!('agreeing' in r), r.id + ' no longer has a separate agreeing list');
     assert.ok(['High', 'Medium', 'Low'].includes(r.severity));
     assert.ok(Array.isArray(r.patterns) && r.patterns.length > 0);
   }
@@ -221,6 +224,7 @@ for (const [id, c] of Object.entries(CASES)) {
 test('the welcome filler on its own triggers no rule (so the fixtures above are meaningful)', () => {
   const a = analyze(FILLER, { doc_type: 'tos' });
   assert.equal(a.findings.length, 0);
+  assert.equal(a.ruleHits.length, 0);
   assert.equal(a.notFound.length, RULES.length);
 });
 
@@ -239,30 +243,80 @@ test('ranking: High before Medium before Low; rule priority breaks ties; output 
     'These terms are governed by the laws of Ohio.',                     // Low
     'Paid plans renew automatically each month.',                        // Medium
     'You waive any right to a jury trial.',                              // High
-    'Disputes are resolved by binding arbitration.',                     // High
     'We may sell your personal information.'                             // High
   ].join('\n');
   const a = run(text);
-  assert.deepEqual(a.findings.map((f) => f.severity), ['High', 'High', 'High', 'Medium', 'Low', 'Low']);
-  assert.deepEqual(a.findings.map((f) => f.id), ['arbitration', 'jury_waiver', 'data_sharing', 'auto_renewal', 'governing_law', 'tracking_cookies']);
-  assert.deepEqual(a.counts, { High: 3, Medium: 1, Low: 2 });
-  assert.deepEqual(a.agreeing.map((x) => x.rule), a.findings.map((f) => f.id), 'agreeing list follows the same ranking');
-  assert.deepEqual(analyze(FILLER + text, { doc_type: 'tos' }).findings.map((f) => f.id), a.findings.map((f) => f.id));
+  assert.deepEqual(a.findings.map((f) => f.severity), ['High', 'High', 'Medium', 'Low', 'Low']);
+  assert.deepEqual(a.findings.map((f) => f.id), ['disputes', 'data_sharing', 'auto_renewal', 'governing_law', 'tracking_cookies']);
+  assert.deepEqual(a.counts, { High: 2, Medium: 1, Low: 2 });
+  assert.deepEqual(analyze(FILLER + text, { doc_type: 'tos', host: 'example.test' }).findings.map((f) => f.id), a.findings.map((f) => f.id));
   // the same rule matching a High and a Low sentence takes the highest severity, and the High quote is listed first
   const mixed = run('We share personal data with service providers that host our servers. We may sell your personal information.');
   const f = find(mixed, 'data_sharing');
   assert.equal(f.severity, 'High');
   assert.equal(f.evidence[0].severity, 'High');
+  assert.equal(f.line, 'They may sell your personal data.', 'the line describes the worst wording found');
 });
 
-test('quote exactness: every quote (evidence, mitigation, overview) is found verbatim by the existing verifier', () => {
+test('one sentence per point: each finding has a single plain sentence written in rules.js, not copied from the page', () => {
+  const t = 'You waive any right to bring or join a class action against the company.';
+  const a = run(t);
+  assert.equal(a.findings.length, 1);
+  assert.equal(a.findings[0].line, "You can't sue them in a class action lawsuit.");
+  const page = E.extractMainText(parseHtml(read('newsco/terms.html'))).text;
+  const all = analyze(page, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  for (const f of all.findings) {
+    assert.ok(f.line.length < 120 && !/\n/.test(f.line), f.line);
+    assert.ok(!page.includes(f.line), 'the line is our wording, not page text: ' + f.line);
+  }
+});
+
+test('no repetition: arbitration, class-action waiver and jury waiver are ONE line, built from what was found', () => {
+  const arb = 'Any dispute will be resolved by binding arbitration.';
+  const cls = 'You waive any right to bring or join a class action.';
+  const jury = 'You waive your right to a trial by jury.';
+  const lines = {
+    all: run([arb, cls, jury].join(' ')),
+    arbCls: run([arb, cls].join(' ')),
+    arbJury: run([arb, jury].join(' ')),
+    clsJury: run([cls, jury].join(' ')),
+    arb: run(arb), cls: run(cls), jury: run(jury)
+  };
+  for (const [k, a] of Object.entries(lines)) assert.equal(a.findings.length, 1, k + ' is one finding');
+  assert.equal(lines.all.findings[0].line, 'Disputes go to private arbitration: no court, no jury, and no class action lawsuits.');
+  assert.equal(lines.arbCls.findings[0].line, "Disputes go to private arbitration, and you can't join a class action lawsuit.");
+  assert.equal(lines.arbJury.findings[0].line, 'Disputes go to private arbitration, and you give up your right to a jury trial.');
+  assert.equal(lines.clsJury.findings[0].line, "You can't sue them in a class action lawsuit, and you give up your right to a jury trial.");
+  assert.equal(lines.arb.findings[0].line, 'Disputes go to private arbitration instead of a court.');
+  assert.equal(lines.jury.findings[0].line, 'You give up your right to a jury trial.');
+  const merged = lines.all.findings[0];
+  assert.deepEqual(merged.rules.sort(), ['arbitration', 'class_action', 'jury_waiver']);
+  assert.equal(merged.evidence.length, 3, 'all three exact quotes stay available behind the toggle');
+  assert.equal(lines.all.ruleHits.length, 3, 'raw hits are kept');
+  // an opt-out is mentioned once, in the same line
+  const opt = run(arb + ' You may opt out of arbitration by writing to us within 30 days.');
+  assert.match(opt.findings[0].line, /may be able to opt out of arbitration/);
+  assert.equal(opt.findings[0].severity, 'Medium');
+  assert.ok(opt.findings[0].mitigation);
+  // identical wording in two places is not shown twice
+  const dup = run(arb + ' ' + arb.replace('Any dispute', 'Every dispute') + ' ' + cls);
+  const quotes = dup.findings[0].evidence.map((e) => e.quote);
+  assert.equal(new Set(quotes).size, quotes.length);
+  // no two findings say the same thing
+  const news = analyze(E.extractMainText(parseHtml(read('newsco/terms.html'))).text, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  assert.equal(new Set(news.findings.map((f) => f.line)).size, news.findings.length);
+  assert.equal(new Set(news.findings.flatMap((f) => f.rules)).size, news.findings.flatMap((f) => f.rules).length, 'a rule appears in one finding only');
+  assert.ok(GROUPS.every((g) => g.members.every((m) => RULES.some((r) => r.id === m))));
+});
+
+test('quote exactness: every quote (evidence and mitigation, merged or raw) is found verbatim by the existing verifier', () => {
   const fixtures = ['acme/terms.html', 'accordion/terms.html', 'langlist/terms.html', 'divsoup/privacy.html', 'hostile/terms.html', 'acme/privacy.html', 'acme/eula.html', 'acme/cookies.html'];
   let quotes = 0;
   for (const f of fixtures) {
     const text = E.extractMainText(parseHtml(read(f))).text;
     const a = analyze(text, { doc_type: 'tos' });
-    const all = [...a.overview.service, ...a.overview.obligations];
-    for (const fd of a.findings) { for (const e of fd.evidence) all.push(e.quote); if (fd.mitigation) all.push(fd.mitigation.quote); }
+    const all = [];
+    for (const fd of [...a.findings, ...a.ruleHits]) { for (const e of fd.evidence) all.push(e.quote); if (fd.mitigation) all.push(fd.mitigation.quote); }
     for (const q of all) { assert.equal(verifyQuote(text, q).verified, true, `${f}: not verbatim: ${q}`); quotes++; }
   }
   assert.ok(quotes > 20, 'enough quotes were checked: ' + quotes);
@@ -321,35 +375,133 @@ test('untrusted text: markup, scripts and prompt-injection phrases stay inert pl
   assert.ok(find(a, 'jury_waiver'));
   assert.ok(a.injectionHints >= 1, 'flagged for reporting only');
   assert.equal(typeof find(a, 'jury_waiver').evidence[0].quote, 'string');
-  assert.deepEqual(a.findings.map((f) => f.id).filter((id) => !RULES.some((r) => r.id === id)), [], 'page text cannot add rules or change results');
+  assert.deepEqual(a.ruleHits.map((f) => f.id).filter((id) => !RULES.some((r) => r.id === id)), [], 'page text cannot add rules or change results');
   const dirty = analyze('You waive any right to a jury\u202e trial\u200b here \u0007.', { doc_type: 'tos' });
   assert.ok(!/[\u202e\u200b\u0007]/.test(JSON.stringify(dirty)), 'control and bidi characters are removed before analysis');
 });
 
-test('overview is extractive: facts come from counts and copied sentences only', () => {
+test('overview: at most 3 short lines (what, type of service, headline); no counts, word counts or reading time', () => {
   const text = E.extractMainText(parseHtml(read('acme/terms.html'))).text;
   const a = analyze(text, { doc_type: 'tos', host: 'acme.test', title: 'Terms of Service | Acme Example' });
-  assert.match(a.overview.summary[0], /terms of service from acme\.test/);
-  assert.match(a.overview.summary.join(' '), /about \d+ words/);
-  assert.match(a.overview.summary.join(' '), /found 8 of the 12 topics.*2 High, 3 Medium, 3 Low/);
-  assert.ok(a.overview.service.length >= 1);
-  assert.ok(a.overview.obligations.some((q) => /must be at least 16 years old/.test(q)));
+  assert.equal(a.overview.summary.length, 3);
+  assert.equal(a.overview.summary[0], 'acme.test: terms of service.');
+  assert.match(a.overview.summary[1], /^Type of service: /);
+  assert.ok(a.overview.summary.every((l) => l.length < 110));
+  const everything = JSON.stringify([a.overview, a.findings.map((f) => [f.line, f.contextNote])]);
+  assert.ok(!/\bwords?\b|minutes?|reading time|of the 12|topics|\d+ (High|Medium|Low)/i.test(everything), 'no filler: ' + everything.slice(0, 300));
+  assert.ok(!('words' in a.stats) && !('minutes' in a.stats));
+  assert.ok(!('service' in a.overview) && !('obligations' in a.overview), 'the copied "what it is about / what you must do" blocks are gone');
   assert.match(a.notice, /Informational, not legal advice/);
-  const sentences = new Set(splitSentences(text));
-  for (const q of [...a.overview.service, ...a.overview.obligations]) assert.ok(sentences.has(q), 'overview line is a whole sentence of the document: ' + q);
 });
 
-test('overview picks a "these terms govern..." style opening sentence when present', () => {
-  const t = 'Acme Cloud is a hosting platform for small teams. These Terms govern your use of the Acme Cloud service. You must pay all fees on time and you may not abuse the service.';
-  const a = analyze(t, { doc_type: 'tos' });
-  assert.ok(a.overview.service.some((q) => /These Terms govern your use/.test(q)));
-  assert.equal(a.overview.service_is_fallback, false);
-  assert.ok(a.overview.obligations.some((q) => /must pay all fees/.test(q)));
+test('headline follows the top severity, and says so when nothing was found', () => {
+  assert.match(run('We use cookies to remember you.').overview.summary[2], /Nothing unusual/);
+  assert.match(run('Paid plans renew automatically each month.').overview.summary[2], /worth knowing/);
+  assert.match(run('You waive any right to a jury trial.').overview.summary[2], /limit your rights/);
+  assert.match(run('Nothing here.').overview.summary[2], /does not prove/);
+});
+
+// ---------------- context ----------------
+const NEWS_LIAB = 'In no event will the company be liable for any indirect damages, and our total liability will not exceed one hundred dollars.';
+
+test('context: kind of service is detected from the host and wording, deterministically', () => {
+  const cases = [
+    ['cnn.com', 'Our news, journalism, articles, newsletters and video. Our editorial staff and publisher.', 'news_media'],
+    ['www.shopexample.test', 'Your order, shipping and delivery. Returns, refunds, your cart and checkout. Product prices.', 'shopping'],
+    ['social.example.test', 'Posts, comments, your profile, followers, and the content you upload and share with other users.', 'social'],
+    ['examplebank.test', 'Your bank account, payments, transfers, loans, credit and interest. Financial services and transactions.', 'finance'],
+    ['app.example.test', 'This software, the app, your subscription, plan, download, update and licence to the application.', 'software']
+  ];
+  for (const [host, text, want] of cases) {
+    const c = TCContext.detect(host, text);
+    assert.equal(c.type, want, host + ' ' + JSON.stringify(c.scores));
+    assert.equal(c.confident, true);
+    assert.match(c.line, /^Type of service: /);
+    assert.deepEqual(TCContext.detect(host, text), c, 'same input, same answer');
+  }
+  assert.equal(new Set(TCContext.TYPES).size, TCContext.TYPES.length);
+  for (const t of ['news_media', 'shopping', 'social', 'finance', 'software', 'other']) assert.ok(TCContext.TYPES.includes(t));
+});
+
+test('context: weak or unclear evidence gives "other" and says so, instead of guessing', () => {
+  for (const [h, t] of [['127.0.0.1', 'These terms describe how you may use the service.'], ['example.test', ''], [undefined, undefined], ['example.test', 'We may contact you about your account.']]) {
+    const c = TCContext.detect(h, t);
+    assert.equal(c.type, 'other', String(h));
+    assert.equal(c.confident, false);
+    assert.match(c.line, /not clear/);
+  }
+});
+
+test('context: limited liability on a news site is not a High risk, but on finance and shopping sites it is', () => {
+  const news = analyze(FILLER + NEWS_LIAB, { doc_type: 'tos', host: 'cnn.com', context: 'news_media' });
+  const fin = analyze(FILLER + NEWS_LIAB, { doc_type: 'tos', host: 'examplebank.test', context: 'finance' });
+  const shop = analyze(FILLER + NEWS_LIAB, { doc_type: 'tos', host: 'shopexample.test', context: 'shopping' });
+  const other = run(NEWS_LIAB);
+  const sevOf = (a) => item(a, 'liability_disclaimer');
+  assert.equal(find(other, 'liability_disclaimer').severity, 'Medium');
+  assert.equal(sevOf(other).severity, 'Medium', 'unclear context: unchanged');
+  assert.equal(sevOf(news).severity, 'Low');
+  assert.notEqual(sevOf(news).severity, 'High');
+  assert.equal(sevOf(news).section, 'also');
+  assert.match(sevOf(news).contextNote, /news or media/);
+  assert.equal(sevOf(fin).severity, 'High');
+  assert.equal(sevOf(fin).section, 'risk');
+  assert.equal(sevOf(shop).severity, 'High');
+  assert.equal(sevOf(fin).baseSeverity, 'Medium');
+});
+
+test('context: the same text is judged by the page it came from (detected, not forced)', () => {
+  const newsText = 'Daily Example News brings you journalism: articles, video, newsletters and our editorial team. ' + NEWS_LIAB;
+  const bankText = 'Your bank account, payments, transfers, loans and credit. Our financial services. ' + NEWS_LIAB;
+  const n = analyze(newsText, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  const b = analyze(bankText, { doc_type: 'tos', host: 'examplebank.test' });
+  assert.equal(n.context.type, 'news_media');
+  assert.equal(item(n, 'liability_disclaimer').severity, 'Low');
+  assert.equal(b.context.type, 'finance');
+  assert.equal(item(b, 'liability_disclaimer').severity, 'High');
+});
+
+test('context: other adjustments - renewal on subscriptions, licence on social, and never beyond High/Low', () => {
+  const renew = 'Your subscription will automatically renew at the end of each billing period.';
+  assert.equal(item(analyze(FILLER + renew, { context: 'software' }), 'auto_renewal').severity, 'High');
+  assert.equal(item(run(renew), 'auto_renewal').severity, 'Medium');
+  const lic = 'You grant us a worldwide, royalty-free license to host and display your content.';
+  assert.equal(item(analyze(FILLER + lic, { context: 'social' }), 'user_content_license').severity, 'High');
+  assert.equal(item(run(lic), 'user_content_license').severity, 'Medium');
+  const asIs = 'The service is provided "as is" and "as available".';
+  assert.equal(item(analyze(FILLER + asIs, { context: 'news_media' }), 'liability_disclaimer').severity, 'Low', 'cannot go below Low');
+  assert.equal(item(analyze(FILLER + asIs, { context: 'finance' }), 'liability_disclaimer').severity, 'Medium', 'Low rises one step only');
+  const sold = 'We may sell your personal information.';
+  assert.equal(item(analyze(FILLER + sold, { context: 'finance' }), 'data_sharing').severity, 'High', 'cannot go above High');
+  assert.equal(item(analyze(FILLER + sold, { context: 'finance' }), 'data_sharing').contextNote, '', 'no note when nothing changed');
+});
+
+test('context matrix: only known rules and types, shifts are +1 or -1, every cell explains itself', () => {
+  for (const [rule, cells] of Object.entries(CONTEXT_MATRIX)) {
+    assert.ok(RULES.some((r) => r.id === rule), rule);
+    for (const [type, cell] of Object.entries(cells)) {
+      assert.ok(TCContext.TYPES.includes(type) && type !== 'other', type);
+      assert.ok([1, -1].includes(cell.shift));
+      assert.ok(cell.note && cell.note.length > 15 && cell.note.length < 120);
+    }
+  }
+  assert.ok(CONTEXT_MATRIX.liability_disclaimer.news_media.shift < 0 && CONTEXT_MATRIX.liability_disclaimer.finance.shift > 0 && CONTEXT_MATRIX.liability_disclaimer.shopping.shift > 0);
+});
+
+test('the news fixture (CNN-style terms) reads as a short, calm list', () => {
+  const text = E.extractMainText(parseHtml(read('newsco/terms.html'))).text;
+  const a = analyze(text, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  assert.equal(a.context.type, 'news_media');
+  assert.equal(item(a, 'liability_disclaimer').section, 'also');
+  assert.equal(item(a, 'arbitration').line, 'Disputes go to private arbitration: no court, no jury, and no class action lawsuits.');
+  assert.ok(a.findings.length <= 10);
+  assert.ok(a.findings.filter((f) => f.rules.includes('arbitration') || f.rules.includes('class_action') || f.rules.includes('jury_waiver')).length === 1);
 });
 
 test('empty, tiny and huge inputs do not throw; matching stays fast', () => {
   assert.equal(analyze('').findings.length, 0);
-  assert.equal(analyze(undefined).stats.words, 0);
+  assert.equal(analyze(undefined).findings.length, 0);
+  assert.equal(analyze(undefined).overview.summary.length, 3);
   assert.equal(analyze('Hi.').findings.length, 0);
   const big = ('We may sell your personal information to partners and you waive any jury trial, ' + 'x'.repeat(50) + ' ').repeat(3000);
   const t0 = Date.now();
@@ -360,13 +512,14 @@ test('empty, tiny and huge inputs do not throw; matching stays fast', () => {
   const t1 = Date.now(); analyze(noPunct); assert.ok(Date.now() - t1 < 5000);
   const cut = analyze('a'.repeat(1200000), {});
   assert.equal(cut.stats.truncated, true);
-  assert.match(cut.overview.summary.join(' '), /only the first/);
+  assert.match(cut.overview.notes.join(' '), /only the first/);
+  assert.equal(cut.overview.summary.length, 3);
 });
 
 test('rules are fixed data: no network, no AI, no dynamic code in the engine files', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  for (const f of ['rules.js', 'analyze.js']) {
+  for (const f of ['rules.js', 'analyze.js', 'context.js']) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|\beval\s*\(|new Function|innerHTML|chrome\.|LanguageModel|window\.ai|\bai\.(languageModel|summarizer)|navigator\.ml/.test(src), f);
   }

@@ -148,3 +148,24 @@ out('hostile/terms.html', `<!doctype html><html lang="en"><head><title>Terms of 
 <h2>4. Cancelling</h2><p>You may cancel at any time from your account page. Refunds are described on the billing page of this fictional service.</p>
 </article></main></body></html>`);
 console.log('fixtures written');
+
+// newsco: an invented news site ("Daily Example News" does not exist) with the usual news-site terms. Used to check context
+// awareness (limited liability is routine on a news site) and the concise Explain output.
+const clausesNews = [
+  ['1. About these terms', 'Welcome to Daily Example News. These Terms of Use apply to your use of our news website, apps, newsletters and video. By using our services you accept these terms.'],
+  ['2. Using our stories', 'Our articles, photos and video are for your personal, non-commercial use. You must be at least 13 years old to use the services, and you may not copy or republish our stories.'],
+  ['3. Comments and submissions', 'If you post a comment or send us a photo or tip, you grant Daily Example News a perpetual, worldwide, irrevocable licence to use, reproduce, modify and publish it in any media.'],
+  ['4. Subscriptions', 'Digital subscriptions renew automatically at the end of each billing period until you cancel. Fees are non-refundable.'],
+  ['5. Changes', 'We may change these terms at any time without notice, and your continued use of the services means you accept the changes.'],
+  ['6. No warranties and limits', 'The services are provided as is and as available, without warranties of any kind. In no event will Daily Example News be liable for any indirect, incidental or consequential damages, and our total liability will not exceed one hundred dollars.'],
+  ['7. Disputes', 'Any dispute will be resolved by binding arbitration on an individual basis. You waive any right to bring or join a class action, and you waive any right to a trial by jury.'],
+  ['8. Ending access', 'We may suspend or terminate your access to the services at any time for any reason.'],
+  ['9. Advertising', 'We and our advertising partners use cookies and tracking technologies to show you personalized advertising and to track your activity across websites.'],
+  ['10. Governing law', 'These terms are governed by the laws of the State of Examplia, and you agree to the exclusive jurisdiction of the courts located there.']
+];
+out('newsco/terms.html', `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Terms of Use | Daily Example News</title></head><body>
+<header><nav><a href="/">Home</a> <a href="/world">World</a> <a href="/politics">Politics</a></nav></header>
+<main><article><h1>Terms of Use</h1>
+<p>Last updated: 1 March 2026</p>
+${sections(clausesNews)}</article></main>
+<footer><a href="/terms">Terms of Use</a> | <a href="/privacy">Privacy Policy</a> | &copy; 2026 Daily Example News (fictional)</footer></body></html>`);

@@ -1,18 +1,20 @@
 /*
  * analyze.js - the on-device "Explain" engine. Pure functions: text in, plain object out.
  * NOT AI: no model, no network, nothing stored. It splits the terms into sentences, tests each sentence against the
- * fixed rules in rules.js, ranks the findings High / Medium / Low, and builds a plain-English overview by EXTRACTING
- * sentences (never rewriting them). Every quote shown to the user is checked with the existing exact-quote verifier
- * (core/quote.js) against the original text; a quote that fails the check is dropped, never shown.
+ * fixed rules in rules.js, merges findings that make the same point, judges each one in the context of the kind of
+ * service (core/context.js), and ranks the result High / Medium / Low. Each finding is ONE fixed plain-English sentence
+ * written in rules.js (page text is never pasted into it). The exact quotes behind it are kept for a collapsed
+ * "Show exact wording" view; every quote is checked with the existing exact-quote verifier (core/quote.js) against the
+ * original text, and a quote that fails the check is dropped, never shown.
  * The terms text is untrusted data: it is sanitised (core/untrusted.js), only matched against regular expressions,
  * and the result is plain strings meant to be shown with textContent (never as HTML).
  */
 (function (root, factory) {
   var api;
-  if (typeof module === 'object' && module.exports) api = factory(require('./rules.js'), require('./quote.js'), require('./untrusted.js'));
-  else api = root.TCAnalyze = factory(root.TCRules, root.TCQuote, root.TCUntrusted);
+  if (typeof module === 'object' && module.exports) api = factory(require('./rules.js'), require('./quote.js'), require('./untrusted.js'), require('./context.js'));
+  else api = root.TCAnalyze = factory(root.TCRules, root.TCQuote, root.TCUntrusted, root.TCContext);
   if (typeof module === 'object' && module.exports) module.exports = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (TCRules, TCQuote, TCUntrusted) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (TCRules, TCQuote, TCUntrusted, TCContext) {
   'use strict';
 
   var MAX_TEXT = 1000000;      // characters analysed (a longer text is cut and the result says so)
@@ -23,8 +25,6 @@
 
   var ABBREV = /\b(Inc|Ltd|Co|Corp|LLC|L\.L\.C|No|Nos|Mr|Mrs|Ms|Dr|vs|etc|e\.g|i\.e|U\.S|U\.K|U\.S\.A|Sec|Secs|Art|approx|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|St|Mt|Fig|cf|al)\./g;
   var ENUM = /(^|\s)((?:\d{1,2}\.)+)(?=\s)/g;
-
-  function words(s) { var m = s.match(/\S+/g); return m ? m.length : 0; }
 
   // Join lines that are only a hard wrap (previous line has no sentence end and the next starts in lower case).
   function paragraphs(text) {
@@ -95,12 +95,12 @@
       for (var a = 0; a < pat.all.length; a++) if (!pat.all[a].test(s)) { ok = false; break; }
       if (!ok) continue;
       var sev = pat.severity || rule.severity;
-      if (!best || TCRules.SEVERITY_RANK[sev] < TCRules.SEVERITY_RANK[best.severity]) best = { severity: sev, at: firstIndex(pat, s) };
+      if (!best || TCRules.SEVERITY_RANK[sev] < TCRules.SEVERITY_RANK[best.severity]) best = { severity: sev, at: firstIndex(pat, s), line: pat.line || rule.line };
     }
     if (!best) return null;
     for (var x = 0; x < (rule.escalate || []).length; x++) {
       var es = rule.escalate[x];
-      if (es.re.test(s) && TCRules.SEVERITY_RANK[es.severity] < TCRules.SEVERITY_RANK[best.severity]) best.severity = es.severity;
+      if (es.re.test(s) && TCRules.SEVERITY_RANK[es.severity] < TCRules.SEVERITY_RANK[best.severity]) { best.severity = es.severity; if (es.line) best.line = es.line; }
     }
     return best;
   }
@@ -116,14 +116,14 @@
       if (seen[key]) return; // repeated sentences (accordion copies etc.) count once
       seen[key] = true;
       var ex = excerpt(s, m.at);
-      hits.push({ quote: ex.text, truncated: ex.truncated, severity: m.severity, index: i });
+      hits.push({ quote: ex.text, truncated: ex.truncated, severity: m.severity, index: i, line: m.line });
     });
     hits = hits.filter(function (h) { return verified(text, h.quote); }); // exact-quote check: unverifiable quotes are dropped
     if (!hits.length) return null;
     hits.sort(function (a, b) { return TCRules.SEVERITY_RANK[a.severity] - TCRules.SEVERITY_RANK[b.severity] || a.index - b.index; });
     var finding = {
       id: rule.id, title: rule.title, severity: hits[0].severity, priority: rule.priority,
-      explain: rule.explain, agreeing: rule.agreeing,
+      line: hits[0].line, explain: rule.explain,
       totalMatches: hits.length,
       evidence: hits.slice(0, MAX_EVIDENCE).map(function (h) { return { quote: h.quote, severity: h.severity, truncated: h.truncated }; }),
       mitigation: null
@@ -151,50 +151,65 @@
     });
   }
 
-  /* ---------- overview (extractive) ---------- */
-  var SERVICE_PATTERNS = [
-    /\b(these|this|the following)\b.{0,60}\b(terms|agreement|conditions|policy)\b.{0,100}\b(govern|apply|applies|cover|covers|describe|describes|set out|sets out|constitute|constitutes|are a (legal )?agreement|is a (legal )?agreement)\b/i,
-    /\bwelcome to\b/i,
-    /\b(we|company)\b.{0,40}\b(provide|provides|offer|offers|operate|operates|make available)\b.{0,100}\b(service|services|platform|website|app|software|product|products)\b/i,
-    /\b(is|are) an? (online |web |mobile )?(platform|service|marketplace|app|application|website|software|network)\b/i
-  ];
-  var OBLIGATION = /\b(you)\s+(must|shall|will|agree to|agree that you|are (responsible|required|obligated|liable)|may not|must not|shall not|will not|cannot|can not|are not (allowed|permitted)|promise|represent and warrant|acknowledge)\b|\b(you are prohibited|prohibited from|not permitted to|responsible for)\b/i;
-  var OBLIGATION_KEYWORDS = /\b(pay|fees?|charges?|taxes|account|password|credentials|accurate|truthful|comply|laws?|unlawful|illegal|abuse|harass\w*|infring\w*|reverse engineer\w*|scrape\w*|security|content|age|years old)\b/gi;
-
-  function pickService(sentences, text) {
-    var found = [];
-    for (var i = 0; i < Math.min(sentences.length, 60) && found.length < 2; i++) {
-      var s = sentences[i];
-      if (words(s) < 6) continue;
-      if (SERVICE_PATTERNS.some(function (re) { return re.test(s); })) found.push(s);
-    }
-    var fallback = false;
-    if (!found.length) {
-      fallback = true;
-      for (var j = 0; j < sentences.length && found.length < 2; j++) if (words(sentences[j]) >= 8) found.push(sentences[j]);
-    }
-    var quotes = found.map(function (s) { return excerpt(s, 0).text; }).filter(function (q) { return verified(text, q); });
-    return { quotes: quotes, fallback: fallback };
-  }
-
-  function pickObligations(sentences, text) {
-    var cands = [], seen = {};
-    sentences.forEach(function (s, i) {
-      if (words(s) < 5 || !OBLIGATION.test(s)) return;
-      var key = TCQuote.normalizeWhitespace(s);
-      if (seen[key]) return; seen[key] = true;
-      var score = (s.match(OBLIGATION_KEYWORDS) || []).length;
-      cands.push({ s: s, i: i, score: score });
+  /* ---------- merging, context ---------- */
+  function mergeGroups(hits) {
+    var used = {}, out = [];
+    TCRules.GROUPS.forEach(function (g) {
+      var members = hits.filter(function (f) { return g.members.indexOf(f.id) > -1; });
+      if (!members.length) return;
+      members.forEach(function (f) { used[f.id] = true; });
+      var has = {}; members.forEach(function (f) { has[f.id] = f; });
+      var sevOf = function (f) { return TCRules.SEVERITY_RANK[f.severity]; };
+      var severity = members.slice().sort(function (a, b) { return sevOf(a) - sevOf(b); })[0].severity;
+      var seen = {}, evidence = [], unseenExtra = 0;
+      members.slice().sort(function (a, b) { return sevOf(a) - sevOf(b) || a.priority - b.priority; }).forEach(function (f) {
+        unseenExtra += Math.max(0, f.totalMatches - f.evidence.length); // matches beyond each rule's own shown quotes
+        f.evidence.forEach(function (e) { var k = TCQuote.normalizeWhitespace(e.quote); if (!seen[k]) { seen[k] = true; evidence.push(e); } });
+      });
+      var mitig = has.arbitration && has.arbitration.mitigation ? has.arbitration.mitigation : null;
+      out.push({
+        id: g.id, rules: members.map(function (f) { return f.id; }), title: g.title, severity: severity, baseSeverity: severity,
+        priority: Math.min.apply(null, members.map(function (f) { return f.priority; })),
+        line: g.line(has, !!mitig), explain: members.map(function (f) { return f.explain; }).join(' '),
+        totalMatches: evidence.length + unseenExtra,
+        evidence: evidence.slice(0, MAX_EVIDENCE), mitigation: mitig, contextNote: ''
+      });
     });
-    cands.sort(function (a, b) { return b.score - a.score || a.i - b.i; });
-    var top = cands.slice(0, 5).sort(function (a, b) { return a.i - b.i; });
-    return top.map(function (c) { return excerpt(c.s, 0).text; }).filter(function (q) { return verified(text, q); });
+    hits.forEach(function (f) {
+      if (used[f.id]) return;
+      out.push({ id: f.id, rules: [f.id], title: f.title, severity: f.severity, baseSeverity: f.severity, priority: f.priority, line: f.line, explain: f.explain, totalMatches: f.totalMatches, evidence: f.evidence, mitigation: f.mitigation, contextNote: '' });
+    });
+    return out;
   }
 
-  var TYPE_LABEL = { tos: 'terms of service', privacy: 'privacy policy', eula: 'end-user licence agreement (EULA)', cookies: 'cookie policy', other: 'legal document' };
+  function shiftSeverity(sev, delta) {
+    var i = TCRules.SEVERITIES.indexOf(sev) - delta; // +1 = more serious = lower index
+    return TCRules.SEVERITIES[Math.max(0, Math.min(TCRules.SEVERITIES.length - 1, i))];
+  }
+
+  function applyContext(items, type) {
+    items.forEach(function (f) {
+      var cell = (TCRules.CONTEXT_MATRIX[f.id] || {})[type];
+      if (!cell) return;
+      var next = shiftSeverity(f.severity, cell.shift);
+      if (next !== f.severity) { f.severity = next; f.contextNote = cell.note; }
+    });
+  }
+
+  function headline(items) {
+    if (!items.length) return 'None of the common risk topics were found. That does not prove they are absent, so skim the terms.';
+    var top = items[0].severity;
+    if (top === 'High') return 'Some of these terms limit your rights. See the High items below.';
+    if (top === 'Medium') return 'Mostly standard terms, with a few points worth knowing below.';
+    return 'Nothing unusual found. These look like routine terms.';
+  }
+
+  var TYPE_LABEL = { tos: 'terms of service', privacy: 'privacy policy', eula: 'end-user licence agreement', cookies: 'cookie policy', other: 'legal document' };
+  var CONTEXT_TYPES = TCContext.TYPES;
 
   /*
-   * analyze(text, meta?) -> result object.  meta: { doc_type, title, host }
+   * analyze(text, meta?) -> result object.  meta: { doc_type, title, host, context }
+   * meta.context (one of TCContext.TYPES) forces the service type; it is for tests and callers, never read from the page.
    */
   function analyze(rawText, meta) {
     meta = meta || {};
@@ -202,41 +217,44 @@
     var truncated = false;
     if (text.length > MAX_TEXT) { text = text.slice(0, MAX_TEXT); truncated = true; }
     var sentences = splitSentences(text);
-    var wc = words(text);
 
-    var findings = [], notFound = [];
+    var ruleHits = [], notFound = [];
     TCRules.RULES.forEach(function (rule) {
       var f = scanRule(rule, sentences, text);
-      if (f) findings.push(f); else notFound.push({ id: rule.id, title: rule.title });
+      if (f) ruleHits.push(f); else notFound.push({ id: rule.id, title: rule.title });
     });
+    sortFindings(ruleHits);
+
+    var ctx = CONTEXT_TYPES.indexOf(meta.context) > -1 && meta.context !== 'other'
+      ? { type: meta.context, label: TCContext.LABELS[meta.context], confident: true, reasons: ['caller'], line: 'Type of service: ' + TCContext.LABELS[meta.context] + '.' }
+      : TCContext.detect(meta.host, text);
+
+    var findings = mergeGroups(ruleHits);
+    applyContext(findings, ctx.type);
     sortFindings(findings);
+    findings.forEach(function (f) { f.section = f.severity === 'Low' ? 'also' : 'risk'; });
 
     var counts = { High: 0, Medium: 0, Low: 0 };
     findings.forEach(function (f) { counts[f.severity]++; });
 
     var label = TYPE_LABEL[meta.doc_type] || 'legal document';
-    var summary = [];
-    summary.push('This looks like a ' + label + (meta.host ? ' from ' + meta.host : '') + '.');
-    summary.push('It has about ' + wc.toLocaleString('en-US') + ' words (roughly ' + Math.max(1, Math.round(wc / 200)) + (Math.max(1, Math.round(wc / 200)) === 1 ? ' minute' : ' minutes') + ' to read).');
-    if (findings.length) {
-      summary.push('The scan found ' + findings.length + ' of the ' + TCRules.RULES.length + ' topics it checks for: ' + counts.High + ' High, ' + counts.Medium + ' Medium, ' + counts.Low + ' Low.');
-    } else {
-      summary.push('The scan found none of the ' + TCRules.RULES.length + ' topics it checks for. That does not prove they are absent: the scan only recognises common wording.');
-    }
-    if (truncated) summary.push('The text was very long, so only the first ' + MAX_TEXT.toLocaleString('en-US') + ' characters were scanned.');
-
-    var service = pickService(sentences, text);
-    var agreeing = findings.map(function (f) { return { severity: f.severity, text: f.agreeing, rule: f.id }; });
+    var host = TCContext.hostOnly(meta.host);
+    var summary = [
+      (host || 'This page') + ': ' + label + '.',
+      ctx.line,
+      headline(findings)
+    ];
 
     return {
       ok: true,
-      meta: { doc_type: meta.doc_type || '', title: TCUntrusted.sanitizeText(meta.title || ''), host: meta.host || '' },
-      stats: { words: wc, sentences: sentences.length, minutes: Math.max(1, Math.round(wc / 200)), truncated: truncated },
-      overview: { summary: summary, service: service.quotes, service_is_fallback: service.fallback, obligations: pickObligations(sentences, text) },
+      meta: { doc_type: meta.doc_type || '', title: TCUntrusted.sanitizeText(meta.title || ''), host: host },
+      stats: { sentences: sentences.length, truncated: truncated },
+      overview: { summary: summary, notes: truncated ? ['The text was very long, so only the first ' + MAX_TEXT.toLocaleString('en-US') + ' characters were scanned.'] : [] },
+      context: { type: ctx.type, label: ctx.label, confident: !!ctx.confident, reasons: ctx.reasons || [] },
       counts: counts,
       findings: findings,
+      ruleHits: ruleHits,
       notFound: notFound,
-      agreeing: agreeing,
       injectionHints: TCUntrusted.injectionHints(text),
       notice: TCRules.NOTICE
     };
