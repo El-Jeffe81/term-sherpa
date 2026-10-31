@@ -47,3 +47,28 @@ details.docs ul { list-style: none; padding: 0; } details.docs li { border-top: 
 #welcome { margin: 10px 0; } #welcome h2 { border: 0; font-size: 20px; margin-top: 14px; }
 ul.welcome-points { padding-left: 20px; } ul.welcome-points li { margin: 8px 0; }
 [hidden] { display: none !important; }
+
+/* Small screens (Firefox for Android is about 360 px wide) and touch: roomy tap targets, no sideways scrolling */
+body { overflow-wrap: anywhere; }
+@media (max-width: 480px), (pointer: coarse) {
+  body { font-size: 16px; padding: 12px; }
+  .muted, li.point .ctx, li.point details .label, .disclaimer { font-size: 14px; }
+  li.point .line { font-size: 17px; }
+  li.point summary, details.docs summary { font-size: 15px; padding: 10px 0; min-height: 24px; }
+  button, button.primary { min-height: 48px; font-size: 16px; padding: 10px 14px; }
+  .row { flex-wrap: wrap; } .row input { min-width: 0; min-height: 44px; font-size: 16px; }
+  .card, #permission { padding-left: 10px; padding-right: 10px; }
+  h1 { font-size: 20px; } h2 { font-size: 17px; }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  p button { margin: 4px 6px 4px 0; }
+  #saved-link { display: inline-block; padding: 12px 0; }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  summary { padding: 12px 0; cursor: pointer; }
+  label.opt { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  label.opt input[type=checkbox] { width: 24px; height: 24px; flex: none; }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .badge, li.point .src, .url { font-size: 13px; }
+}

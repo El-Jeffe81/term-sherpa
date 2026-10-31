@@ -238,6 +238,32 @@ try {
   assert.match(vCalm.visibleText, /Nothing found doesn't mean there's no risk\./);
   ok('a terms text with no risk points still shows "Nothing found doesn\'t mean there\'s no risk." (and the line is hidden when risks are listed)');
 
+  // small screen (Firefox for Android is about 360 CSS px wide): no sideways scrolling, tap targets at least 44 px, readable text
+  {
+    const narrow = async (page, prep) => {
+      await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }, page.sessionId);
+      await new Promise((r) => setTimeout(r, 250));
+      const out = JSON.parse(await page.ev(`(async () => { ${prep || ''}
+        const tall = [...document.querySelectorAll('button, summary, a[href], input:not([type=checkbox]), select, label.opt')].filter((e) => e.getClientRects().length > 0 && !e.closest('[hidden]'));
+        const small = tall.filter((e) => e.getBoundingClientRect().height < 44).map((e) => (e.id || e.tagName) + ':' + Math.round(e.getBoundingClientRect().height));
+        const text = [...document.querySelectorAll('body *')].filter((e) => e.getClientRects().length > 0 && e.children.length === 0 && e.textContent.trim()).map((e) => parseFloat(getComputedStyle(e).fontSize));
+        return JSON.stringify({ over: document.documentElement.scrollWidth - document.documentElement.clientWidth, width: document.documentElement.clientWidth, small, minFont: Math.min(...text), controls: tall.length }); })()`));
+      return out;
+    };
+    const open = `document.querySelectorAll('details').forEach((d) => { d.open = true; });`;
+    const exN = await narrow(ex, `await TCExplainUI.show(${JSON.stringify(terms)}); ${open}`);
+    assert.equal(exN.width, 360); assert.ok(exN.over <= 0, 'explain: sideways scroll ' + JSON.stringify(exN)); assert.deepEqual(exN.small, [], 'explain: small tap targets'); assert.ok(exN.minFont >= 13, 'explain: tiny text ' + exN.minFont);
+    const exN2 = await narrow(ex, `for (const e of document.querySelectorAll('#app [hidden], #welcome')) e.hidden = false; ${open}`);
+    assert.ok(exN2.over <= 0, 'explain (all sections shown): sideways scroll ' + JSON.stringify(exN2)); assert.deepEqual(exN2.small, [], 'explain (all sections shown): small tap targets');
+    if (process.env.TC_SHOT) { const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT.replace(/\.png$/, '-phone-explain.png'), Buffer.from(sh.data, 'base64')); }
+    const lN = await narrow(launcher, `document.getElementById('again').hidden = false;`);
+    assert.ok(lN.over <= 0, 'launcher: sideways scroll ' + JSON.stringify(lN)); assert.deepEqual(lN.small, [], 'launcher: small tap targets');
+    const pN = await narrow(popup, `for (const e of document.querySelectorAll('section[hidden]')) e.hidden = false;`);
+    assert.ok(pN.over <= 0, 'popup page: sideways scroll ' + JSON.stringify(pN)); assert.deepEqual(pN.small, [], 'popup page: small tap targets');
+    for (const pg of [ex, launcher, popup]) await send('Emulation.clearDeviceMetricsOverride', {}, pg.sessionId);
+    ok(`360 px wide phone layout: explain window (result, and every section shown), launcher and saved-copies page - no sideways scroll, every button/link/summary at least 44 px tall, text at least 13 px (explain ${exN.controls}+${exN2.controls}, launcher ${lN.controls}, saved ${pN.controls} controls checked)`);
+  }
+
   const nv = await view(await runIn(site.base + '/news/terms', {}));
   const liab = nv.points.find((c) => /limit what they owe/.test(c.line));
   assert.ok(liab && liab.sec === 'also-list' && liab.cls.endsWith('sev-Low'), 'on a news site limited liability is a lower concern');
