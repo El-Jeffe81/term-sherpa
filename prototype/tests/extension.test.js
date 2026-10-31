@@ -73,3 +73,77 @@ test('required documents exist and mark every partner as pending owner approval'
   const oq = fs.readFileSync(path.join(ROOT, 'OPEN_QUESTIONS.md'), 'utf8');
   for (const k of [/dataset location/i, /naming|name/i, /lawyer/i]) assert.match(oq, k);
 });
+
+// ---- Explain phase ----
+const explainSrc = () => stripComments(fs.readFileSync(path.join(EXT, 'explain', 'explain.js'), 'utf8'));
+const launcherSrc = () => stripComments(fs.readFileSync(path.join(EXT, 'explain', 'launcher.js'), 'utf8'));
+
+test('explain: the toolbar popup is the launcher; it opens a window with chrome.windows (no new permission) and reads nothing', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
+  assert.equal(m.action.default_popup, 'explain/launcher.html');
+  assert.equal(m.background, undefined);
+  assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting']);
+  const l = launcherSrc();
+  assert.match(l, /chrome\.windows\.create\(/);
+  assert.ok(!/executeScript|scripting|TCDB|indexedDB|localStorage/.test(l), 'launcher never reads the page or stores anything');
+});
+
+test('explain: the page is read in one place only (runOnPage, started from run() when the window opens)', () => {
+  const js = explainSrc();
+  assert.equal((js.match(/executeScript/g) || []).length, 3);
+  const body = /async function runOnPage[\s\S]*?\n  }\n/.exec(js)[0];
+  assert.equal((body.match(/executeScript/g) || []).length, 3);
+  assert.equal([...js.matchAll(/runOnPage\(/g)].length, 2, 'definition + one caller (run)');
+  assert.equal([...js.matchAll(/\brun\(\)/g)].length, 2, 'definition + one call at the end');
+  assert.ok(!/chrome\.(history|cookies|webRequest|downloads|identity|storage)/.test(js));
+});
+
+test('explain: page text is rendered with textContent only (no HTML sinks)', () => {
+  const js = explainSrc();
+  assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment|srcdoc|\.setAttribute\(\s*['"]on/.test(js));
+  assert.ok(/\.textContent = text/.test(js) && /createTextNode/.test(js));
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  assert.match(html, /Informational, not legal advice/, 'notice is in the page itself, before any result');
+  assert.ok(html.indexOf('Informational, not legal advice') < html.indexOf('id="result"'));
+});
+
+test('explain: terms are NOT saved by default - TCDB is used only inside maybeSave(), which needs the opt-in flag', () => {
+  const js = explainSrc();
+  const uses = [...js.matchAll(/TCDB\./g)].length;
+  assert.equal(uses, 1, 'exactly one TCDB call in the Explain window');
+  const fn = /async function maybeSave\(extracted\) \{[\s\S]*?\n  }\n/.exec(js)[0];
+  assert.match(fn, /if \(!saveEnabled\(\)\) return null;\s*return TCDB\.saveSnapshot\(extracted\);/);
+  assert.match(js, /function saveEnabled\(\) \{ try \{ return localStorage\.getItem\(SAVE_KEY\) === '1'; \} catch \(e\) \{ return false; \} \}/, 'default is off, also if storage fails');
+  assert.ok(!/TCDB\.(saveLinks|pickLink|getLink)/.test(js), 'no link/pick records in IndexedDB from the new window');
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  assert.match(html, /<input type="checkbox" id="save-copies">(?!.*checked)/, 'checkbox is not checked by default in the markup');
+  // legacy collection code is kept, not deleted
+  for (const f of ['popup/popup.js', 'popup/popup.html', 'popup/db.js']) assert.ok(fs.existsSync(path.join(EXT, f)), f + ' kept');
+});
+
+test('explain: no Chrome built-in AI / Prompt API, no network, no remote code anywhere in the extension', () => {
+  for (const f of walk(EXT).filter((x) => /\.(js|html)$/.test(x))) {
+    const src = stripComments(fs.readFileSync(f, 'utf8'));
+    assert.ok(!/LanguageModel|window\.ai\b|self\.ai\b|\bai\.(languageModel|summarizer|writer|rewriter)|Summarizer\b|chrome\.aiOriginTrial|navigator\.ml/.test(src), f);
+  }
+});
+
+test('explain: Explain window loads the engine scripts in dependency order from the extension itself', () => {
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  const srcs = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+  const at = (f) => srcs.indexOf(f);
+  assert.ok(at('../core/quote.js') > -1 && at('../core/rules.js') > -1 && at('../core/analyze.js') > -1 && at('explain.js') > -1);
+  assert.ok(at('../core/rules.js') < at('../core/analyze.js') && at('../core/quote.js') < at('../core/analyze.js') && at('../core/analyze.js') < at('explain.js'));
+});
+
+test('docs: README documents the Explain usage and implementation.md keeps CSO Concerns first', () => {
+  const impl = fs.readFileSync(path.join(ROOT, '..', 'implementation.md'), 'utf8');
+  assert.match(impl, /^# Implementation\n\n## CSO Concerns \(read first\)\n/);
+  assert.match(impl, /## Explain phase/);
+  assert.match(impl, /on-device/i);
+  assert.match(impl, /not saved by default/i);
+  assert.match(impl, /parked/i);
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  assert.match(readme, /Explain/);
+  assert.match(readme, /not legal advice/i);
+});
