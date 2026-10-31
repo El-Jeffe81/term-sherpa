@@ -21,22 +21,33 @@ Everything here is local to this box/device. Nothing was pushed, sent or publish
 | `PARTNERS.md`, `OPEN_QUESTIONS.md` | Candidate third parties (all pending owner approval) and decisions needed |
 
 Requirements: Node >= 22.13 (uses built-in `node:sqlite` and `node:test`). **No npm dependencies** to install.
-Chrome is only needed to use the extension, and for the optional e2e.
+A Chromium-family browser (Chrome, Edge, Brave, Opera, Vivaldi) or Firefox desktop is only needed to use the extension, and for the optional e2e.
 
 ## Run the tests
 ```
 cd /workspace/tc-prototype
-npm test                 # offline unit + CLI + security + quality + rule-engine + extension-lint tests, no network beyond 127.0.0.1 (130 tests)
-npm run validate         # manifest validation
-npm run test:e2e         # OPTIONAL: real headless Chrome (19 checks); skips itself if Chrome is not installed
+npm test                 # offline unit + CLI + security + quality + rule-engine + extension-lint tests, no network beyond 127.0.0.1 (208 tests)
+npm run validate         # manifest validation of the source and of both built packages
+npm run build            # dist/chrome + dist/firefox (and zips) from the one shared source
+npm run lint:firefox     # web-ext lint on dist/firefox (downloads web-ext on first use)
+npm run test:e2e         # OPTIONAL: real headless Chromium-family browser (35 checks, CHROME_BIN picks the browser); skips itself if none is installed
+npm run test:e2e:firefox # OPTIONAL: real headless Firefox via geckodriver (12 checks, FIREFOX_BIN / GECKODRIVER_BIN); skips itself if missing
 ```
 The tests only talk to a local fixture server on 127.0.0.1 serving invented sites ("Acme Example", `*.test` addresses).
 No real site is scraped in tests.
+
+## Browsers
+Chrome MV3 source, one codebase, two packages. Tested headless on Linux: Chrome, Edge, Brave, Vivaldi, Opera (35/35 each) and Firefox 159 (12/12);
+not tested: a human toolbar click, the real permission prompt, Firefox for Android, Windows/macOS, Safari. Details: `../docs/BROWSER_TESTING.md`.
+Firefox for Android review: `../docs/FIREFOX_ANDROID.md`. Free ways to publish (nothing published yet): `../docs/PUBLISHING.md`.
 
 ## Load the extension (unpacked)
 1. Open `chrome://extensions`, switch on **Developer mode**.
 2. **Load unpacked** and pick the `extension/` folder (after pulling new code, press the reload button on the extension card).
 3. Open a terms page (or a page whose footer links to terms), click the extension icon. A window opens and explains the page.
+
+**Firefox:** run `npm run build:firefox`, open `about:debugging#/runtime/this-firefox`, **Load Temporary Add-on**, and pick `dist/firefox/manifest.json` (temporary until restart; a permanent install needs an AMO-signed file, see `../docs/PUBLISHING.md`).
+**Edge/Brave/Opera/Vivaldi:** same as Chrome, on that browser's extensions page.
 
 ## Explain: what you see and how it works
 Click the icon on a terms page. The window shows, top to bottom:

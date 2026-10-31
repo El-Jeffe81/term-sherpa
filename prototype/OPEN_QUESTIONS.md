@@ -46,3 +46,12 @@
 - **Regional dedupe**: heuristic, prefers the browser language then US English; it can merge distinct regional policies (e.g. /privacy/ca vs /privacy/us). Should the user be able to pick the region?
 - **JavaScript-only documents** are reported as not read. Is a headless-render partner for those worth approving later?
 - **Real-site check**: the CNN dialog and Chrome's real permission prompt were not tested (headless limits); needs a manual run in headed Chrome.
+
+## Other browsers (added on branch feat/other-browsers)
+- **Add-on ID (permanent on AMO once published)**: `terms-guide@el-jeffe81.github.io`, set in `manifests/firefox.overlay.json`. Keep it, or choose another before the first upload?
+- **Firefox minimum version 140** (desktop) / **142** (Android): needed for the `data_collection_permissions` declaration AMO requires for new add-ons. Is dropping older Firefox releases acceptable?
+- **Android listing**: the manifest already marks Firefox for Android as supported, but it could not be run here. Ship it after a device test, or remove the `gecko_android` block for the first release?
+- **Publishing routes (free only)**: GitHub-release zip for Chrome-family users, AMO and Edge Add-ons. The Chrome Web Store is excluded (US$5 fee). Confirm, and say who creates the accounts and the release (nothing was created). See `docs/PUBLISHING.md`.
+- **Icons**: the manifest has none; stores want them. Who makes them?
+- **Manual check per browser family**: a visible-window run with a real toolbar click and the real permission prompt has not been done in any browser.
+
