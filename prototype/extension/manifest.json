@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Terms Guide (working name)",
+  "name": "Term Sherpa",
   "version": "0.3.1",
   "description": "Explains the terms, privacy policy or 'I agree' dialog you are on in plain English, on this device. Nothing saved by default.",
   "action": {
-    "default_title": "Terms Guide: explain this page",
+    "default_title": "Term Sherpa: explain this page",
     "default_popup": "explain/launcher.html"
   },
   "permissions": ["activeTab", "scripting"],

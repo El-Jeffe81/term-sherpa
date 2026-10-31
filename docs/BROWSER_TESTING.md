@@ -9,8 +9,8 @@ All test sites are invented (`*.test` names served from 127.0.0.1); no real site
 
 | Output | What it is |
 |---|---|
-| `dist/chrome/` and `dist/terms-guide-<version>-chrome.zip` | The shared source, with `manifest.json` copied byte for byte. For Chrome, Edge, Brave, Opera, Vivaldi. |
-| `dist/firefox/` and `dist/terms-guide-<version>-firefox.zip` | The same files; the manifest is the shared manifest plus `prototype/manifests/firefox.overlay.json` (`browser_specific_settings`: minimum versions (no add-on ID yet), `data_collection_permissions` = none). |
+| `dist/chrome/` and `dist/term-sherpa-<version>-chrome.zip` | The shared source, with `manifest.json` copied byte for byte. For Chrome, Edge, Brave, Opera, Vivaldi. |
+| `dist/firefox/` and `dist/term-sherpa-<version>-firefox.zip` | The same files; the manifest is the shared manifest plus `prototype/manifests/firefox.overlay.json` (`browser_specific_settings`: add-on ID `term-sherpa@el-jeffe81.github.io`, minimum versions, `data_collection_permissions` = none). |
 
 The build never deletes anything; it stops if `dist/<target>` already holds stale files (remove the folder yourself first).
 `npm run validate` builds both packages and checks that every file other than the manifest is identical, and that the Firefox manifest equals
@@ -70,7 +70,7 @@ profile, and runs the same story as the Chrome test. Setup it needs, all confine
 | Opera | 139.0.6053.22 (Chromium 155) | same e2e, `GSETTINGS_SCHEMA_DIR` | 35/35 |
 | Firefox desktop | 159.0 (geckodriver 0.37.1) | Firefox e2e, `dist/firefox` | 12/12 |
 
-Plus: `npm test` 208/208, `npm run validate` OK, `web-ext lint -s dist/firefox` reports one expected error, `ADDON_ID_REQUIRED`, because the add-on ID is deliberately unset until Jeff decides it; nothing else (web-ext 10.8.0). The Firefox e2e gives a throw-away copy a test-only ID.
+Plus: `npm test` 208/208, `npm run validate` OK, `web-ext lint -s dist/firefox` 0 errors / 0 warnings / 0 notices (web-ext 10.8.0), with add-on ID `term-sherpa@el-jeffe81.github.io`.
 
 ### A real bug the Firefox run found
 `scripting.executeScript({ files: ['core/untrusted.js', ...] })` worked in Chrome but failed in Firefox ("Unable to load script"):

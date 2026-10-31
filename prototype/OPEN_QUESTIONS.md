@@ -8,7 +8,7 @@
    OTA's ODC-By covers only its database, not the underlying text, and that whether archiving or republishing is permitted depends
    on jurisdiction **[unverified; needs a lawyer]**. This prototype does not redistribute anything: the zip contains only invented
    fixture text, and export of real text is opt-in (`--include-text`).
-3. **Naming.** The name is undecided ("Terms Guide (working name)"). Choose one before any store listing or public docs;
+3. **Naming.** Decided by Jeff on 2026-10-31: **Term Sherpa** (repo `El-Jeffe81/term-sherpa`). Choose one before any store listing or public docs;
    check trademark and domain availability (not done here).
 4. **Licence for our own code.** `package.json` says UNLICENSED for now. Pick one before sharing.
 5. **Partners.** Approve or reject each item in PARTNERS.md, especially Readability (better extraction) and anything that
@@ -35,7 +35,7 @@
 - **"Track what I've agreed to"**: parked, not built. It would store personal data (what, when, which version). Do you want it, and where would it live?
 - **Chrome built-in on-device AI (Prompt API)**: parked, not used. Do you approve trying it later as an optional extra?
 - **Legacy collection popup**: kept as an opt-in "Save copies" path and an advanced view. Keep, or retire it?
-- **Working name**: "Terms Guide" is still a placeholder.
+- **Name**: decided, "Term Sherpa".
 - **Context matrix**: which kinds of service move which findings up or down (see `CONTEXT_MATRIX` in `extension/core/rules.js`) is a set of judgement calls. Is a news site's limited liability really Low? Review the values, and the kinds of service (news, shopping, social, finance, app) for gaps. Optionally add a "Why it matters" toggle with the longer explanation (it is in the rules, currently not shown).
 - **Rule wording and severity**: needs your review, and a lawyer's review of the plain-English explanations before wide release.
 - **Optional host permission `https://*/*` (v0.3.0)**: needed so the Explain window can read the documents an agree dialog links to (they are usually on another host). Nothing is granted at install; Chrome asks once per site after the user's click, and it can be removed in Options. OK to ship this way? Alternative: no fetching (list the links only), or a fixed allow-list of legal-document hosts.
@@ -48,7 +48,7 @@
 - **Real-site check**: the CNN dialog and Chrome's real permission prompt were not tested (headless limits); needs a manual run in headed Chrome.
 
 ## Other browsers (added on branch feat/other-browsers)
-- **Add-on ID (permanent on AMO once published)**: not set yet, on purpose. Jeff decides it before any Firefox publishing.
+- **Add-on ID (permanent on AMO once published)**: decided by Jeff on 2026-10-31: `term-sherpa@el-jeffe81.github.io`.
 - **Firefox minimum version 140** (desktop) / **142** (Android): needed for the `data_collection_permissions` declaration AMO requires for new add-ons. Is dropping older Firefox releases acceptable?
 - **Android listing**: the manifest already marks Firefox for Android as supported, but it could not be run here. Ship it after a device test, or remove the `gecko_android` block for the first release?
 - **Publishing routes (free only)**: GitHub-release zip for Chrome-family users, AMO and Edge Add-ons. The Chrome Web Store is excluded (US$5 fee). Confirm, and say who creates the accounts and the release (nothing was created). See `docs/PUBLISHING.md`.

@@ -3,7 +3,7 @@
 /*
  * build.js - makes the store/release packages from the ONE shared source tree (extension/). No dependencies.
  *
- *   node scripts/build.js                 -> dist/chrome/, dist/firefox/, dist/terms-guide-<ver>-chrome.zip, dist/terms-guide-<ver>-firefox.zip
+ *   node scripts/build.js                 -> dist/chrome/, dist/firefox/, dist/term-sherpa-<ver>-chrome.zip, dist/term-sherpa-<ver>-firefox.zip
  *   node scripts/build.js chrome|firefox  -> just that one
  *
  * Both packages contain exactly the same files as extension/. They differ ONLY in manifest.json:
@@ -100,7 +100,7 @@ function build(target) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, e.data);
   }
-  const zipPath = path.join(DIST, 'terms-guide-' + base.version + '-' + target + '.zip');
+  const zipPath = path.join(DIST, 'term-sherpa-' + base.version + '-' + target + '.zip');
   fs.writeFileSync(zipPath, zip(entries));
   return { target, dir: outDir, zip: zipPath, files: entries.length, version: manifest.version };
 }

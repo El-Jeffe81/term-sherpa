@@ -2,6 +2,7 @@
   "_comment": "Merged over extension/manifest.json by scripts/build.js to make the Firefox package. Only differences live here; everything else is shared. This extension has no background page or service worker. If one is ever added to the shared manifest, the build turns background.service_worker into background.scripts for Firefox (see scripts/build.js).",
   "browser_specific_settings": {
     "gecko": {
+      "id": "term-sherpa@el-jeffe81.github.io",
       "strict_min_version": "140.0",
       "data_collection_permissions": { "required": ["none"] }
     },

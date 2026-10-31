@@ -24,7 +24,7 @@ async function startDocsTls() {
   const f = (n) => path.join(dir, n);
   const sh = (args, input) => spawnSync('openssl', args, { stdio: input ? ['pipe', 'ignore', 'ignore'] : 'ignore', input }).status === 0;
   writeExt(f('ext.cnf'));
-  const made = sh(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', f('ca.key'), '-out', f('ca.pem'), '-days', '2', '-subj', '/CN=Terms Guide test CA', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'])
+  const made = sh(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', f('ca.key'), '-out', f('ca.pem'), '-days', '2', '-subj', '/CN=Term Sherpa test CA', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'])
     && sh(['req', '-newkey', 'rsa:2048', '-nodes', '-keyout', f('k.pem'), '-out', f('s.csr'), '-subj', '/CN=docs.newsco.test'])
     && sh(['x509', '-req', '-in', f('s.csr'), '-CA', f('ca.pem'), '-CAkey', f('ca.key'), '-CAcreateserial', '-out', f('c.pem'), '-days', '2', '-extfile', f('ext.cnf')]);
   if (!made) return null;
