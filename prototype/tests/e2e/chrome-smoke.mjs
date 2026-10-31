@@ -169,9 +169,12 @@ try {
   ok('real IndexedDB (v2): versions + diff, links (picked, PDF flag, unsafe refused), sections, sanitizing on save, export, delete, clear');
 
   // (3) Explain window: launcher + explain page in the real extension, fed with the real injected-script result
+  // TC_REVIEW=<dir>: also save clean screenshots for a design review (welcome, launcher, explain, explain-phone). Never part of the repo.
+  const rshot = async (pg, name) => { if (!process.env.TC_REVIEW) return; fs.mkdirSync(process.env.TC_REVIEW, { recursive: true }); const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, pg.sessionId); fs.writeFileSync(path.join(process.env.TC_REVIEW, name + '.png'), Buffer.from(sh.data, 'base64')); };
   const launcher = await openTab(`chrome-extension://${extId}/explain/launcher.html`);
   assert.equal(await launcher.ev("typeof chrome.windows.create"), 'function');
   assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
+  await rshot(launcher, 'launcher');
   ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
   const manifestPerms = JSON.parse(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().permissions)'));
   assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting', 'storage']);
@@ -187,6 +190,7 @@ try {
   const vis = (id) => ex.ev(`!document.getElementById(${JSON.stringify(id)}).hidden && document.getElementById(${JSON.stringify(id)}).getClientRects().length > 0`);
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(await vis('welcome'), true, 'first run: welcome screen visible'); assert.equal(await vis('app'), false, 'nothing else is shown before Continue');
+  await rshot(ex, 'welcome');
   assert.match(await ex.ev('document.getElementById("welcome").textContent'), /Nothing leaves your device[\s\S]*Nothing is saved by default/);
   assert.equal(await ex.ev('document.getElementById("welcome-go").textContent'), 'Continue');
   assert.equal(await ex.ev('document.getElementById("disclaimer").textContent'), DISCLAIMER); assert.equal(await vis('disclaimer'), true, 'disclaimer visible on the welcome screen too');
@@ -253,6 +257,7 @@ try {
     const open = `document.querySelectorAll('details').forEach((d) => { d.open = true; });`;
     const exN = await narrow(ex, `await TCExplainUI.show(${JSON.stringify(terms)}); ${open}`);
     assert.equal(exN.width, 360); assert.ok(exN.over <= 0, 'explain: sideways scroll ' + JSON.stringify(exN)); assert.deepEqual(exN.small, [], 'explain: small tap targets'); assert.ok(exN.minFont >= 13, 'explain: tiny text ' + exN.minFont);
+    await rshot(ex, 'explain-phone');
     const exN2 = await narrow(ex, `for (const e of document.querySelectorAll('#app [hidden], #welcome')) e.hidden = false; ${open}`);
     assert.ok(exN2.over <= 0, 'explain (all sections shown): sideways scroll ' + JSON.stringify(exN2)); assert.deepEqual(exN2.small, [], 'explain (all sections shown): small tap targets');
     if (process.env.TC_SHOT) { const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT.replace(/\.png$/, '-phone-explain.png'), Buffer.from(sh.data, 'base64')); }
@@ -292,6 +297,7 @@ try {
   assert.equal(await ex.ev("localStorage.getItem('tc.saveCopies')"), null);
   ok('explain window: non-terms page -> candidate links only, no analysis, no storage');
   if (process.env.TC_SHOT) { await view(terms); const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT, Buffer.from(shot.data, 'base64')); }
+  if (process.env.TC_REVIEW) { await view(terms); await rshot(ex, 'explain'); }
 
 
   // (4) The agree dialog: explain the documents it links to (Terms + Privacy + Cookies + ...), one combined explanation.

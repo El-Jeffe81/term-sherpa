@@ -641,3 +641,11 @@ test('combined: documents are untrusted - hostile text only becomes quotes (plai
   assert.ok(a.injectionHints >= 1, 'the "ignore all previous instructions" sentence is flagged');
   assert.ok(a.findings.every((f) => typeof f.line === 'string' && f.line.length < 120));
 });
+
+test('languageNote: only documents that say they are not English get the note', () => {
+  const A = require('../extension/core/analyze');
+  assert.equal(A.languageNote([{ lang: 'en' }, { lang: 'en-GB' }, { lang: '' }, {}]), '');
+  assert.match(A.languageNote([{ lang: 'fr' }]), /^ One document is not in English/);
+  assert.match(A.languageNote([{ lang: 'fr' }, { lang: 'de-DE' }]), /^ Some documents are not in English/);
+  assert.equal(A.languageNote(undefined), '');
+});

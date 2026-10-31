@@ -278,13 +278,13 @@
     var analysis = TCAnalyze.analyzeDocuments(read.map(function (r) { return { text: r.text, doc_type: r.doc_type, label: r.label, url: r.url }; }),
       { host: ctx.host, via: ctx.via, unread: unread.map(function (u) { return { label: u.label, reason: u.reason }; }) });
     renderAnalysis(analysis);
-    var msg = 'Done. Read ' + read.length + (read.length === 1 ? ' document' : ' documents') + '. Nothing was saved.';
+    var msg = 'Done. Read ' + read.length + (read.length === 1 ? ' document' : ' documents') + '. Nothing was saved.' + TCAnalyze.languageNote(read);
     if (saveEnabled()) {
       try {
         for (var k = 0; k < read.length; k++) {
           await maybeSave({ url: read[k].url, title: read[k].title, doc_type: read[k].doc_type, discovered_via: 'consent_link', text: read[k].text, sections: [], lang: read[k].lang });
         }
-        msg = 'Done. Read ' + read.length + ' documents. Copies were saved on this device because you turned that option on.';
+        msg = 'Done. Read ' + read.length + ' documents. Copies were saved on this device because you turned that option on.' + TCAnalyze.languageNote(read);
       } catch (e) { msg = 'Done, but a copy could not be saved: ' + e.message; }
     }
     setStatus(msg);
