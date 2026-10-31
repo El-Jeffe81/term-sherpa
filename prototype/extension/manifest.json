@@ -22,7 +22,8 @@
   },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "optional_host_permissions": [
     "https://*/*"

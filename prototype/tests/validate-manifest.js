@@ -29,9 +29,9 @@ function validate(EXT, target) {
   ok(!('background' in m), 'no background/service worker needed');
   ok(!('web_accessible_resources' in m), 'no web_accessible_resources');
   ok(!('externally_connectable' in m), 'no externally_connectable');
-  ok(!('permissions' in m) || JSON.stringify([...m.permissions].sort()) === JSON.stringify(['activeTab', 'scripting']), 'permissions must be exactly activeTab + scripting');
+  ok(!('permissions' in m) || JSON.stringify([...m.permissions].sort()) === JSON.stringify(['activeTab', 'scripting', 'storage']), 'permissions must be exactly activeTab + scripting + storage');
   ok(!('optional_permissions' in m), 'no optional_permissions');
-  ok(Array.isArray(m.permissions) && m.permissions.includes('activeTab') && m.permissions.includes('scripting'), 'activeTab and scripting required');
+  ok(Array.isArray(m.permissions) && m.permissions.includes('activeTab') && m.permissions.includes('scripting') && m.permissions.includes('storage'), 'activeTab, scripting and storage required');
   ok(m.action && m.action.default_popup, 'action.default_popup required');
   const csp = (m.content_security_policy || {}).extension_pages || '';
   ok(/script-src 'self'/.test(csp) && !/unsafe-eval|unsafe-inline|https?:/.test(csp), "CSP must be script-src 'self' with no unsafe-* or remote sources");
@@ -108,5 +108,5 @@ if (require.main === module) {
   const only = process.argv[2] === 'source';
   const errs = validate().concat(only ? [] : validatePackages());
   if (errs.length) { console.error('MANIFEST INVALID:\n- ' + errs.join('\n- ')); process.exit(1); }
-  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)' + (only ? '' : '; chrome + firefox packages OK'));
+  console.log('manifest OK (MV3; permissions: activeTab, scripting, storage; no content_scripts; no up-front host permissions; optional https://*/* only)' + (only ? '' : '; chrome + firefox packages OK'));
 }

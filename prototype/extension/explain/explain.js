@@ -11,7 +11,8 @@
  * just those sites (optional_host_permissions: nothing is allowed up front). The dialog itself is only read, never
  * clicked. Fetched text is untrusted, shown through textContent, and not saved unless "Also save a copy" is on.
  *
- * Storage: by DEFAULT NOTHING ABOUT THE TERMS IS SAVED. The old collection path (TCDB, IndexedDB) is kept but is used
+ * Storage: by DEFAULT NOTHING ABOUT THE TERMS IS SAVED. The only thing written without a choice is one yes/no marker
+ * (chrome.storage.local "tc.welcomeSeen") so the welcome screen shows once. The old collection path (TCDB, IndexedDB) is kept but is used
  * only inside maybeSave(), and only if the user ticked "Also save a copy" in Options (a boolean flag in localStorage).
  * The only other thing kept is the one link a user picks from a list ("Open this page"): its URL and type, for one hour.
  */
@@ -133,6 +134,7 @@
     var al = $('also-list'); clear(al);
     also.forEach(function (f) { al.appendChild(pointItem(f, multi)); });
     $('also').hidden = also.length === 0;
+    $('nothing-found').hidden = risk.length !== 0 || also.length !== 0;
   }
 
   function variantNote(d) { return d.variants ? '(' + d.variants + ' other regional or language version' + (d.variants === 1 ? '' : 's') + ' of this page not shown)' : ''; }
@@ -310,6 +312,22 @@
     }
   }
 
+  /* ---------- first run: a welcome screen once, before first use (only a yes/no marker is stored) ---------- */
+  var WELCOME_KEY = 'tc.welcomeSeen';
+  async function welcomeSeen() {
+    try { var o = await chrome.storage.local.get(WELCOME_KEY); return !!(o && o[WELCOME_KEY]); } catch (e) { return false; }
+  }
+  async function markWelcomeSeen() {
+    try { await chrome.storage.local.set((function () { var o = {}; o[WELCOME_KEY] = true; return o; })()); } catch (e) { /* best effort: the screen would just show again */ }
+  }
+  function showApp(on) { $('app').hidden = !on; $('welcome').hidden = on; }
+  async function start() {
+    if (await welcomeSeen()) { showApp(true); return run(); }
+    showApp(false);
+    $('welcome-go').focus();
+  }
+  $('welcome-go').addEventListener('click', async function () { await markWelcomeSeen(); showApp(true); run(); });
+
   $('perm-go').addEventListener('click', function () { if (pending) explainLinks(pending.links, Object.assign({}, pending.ctx, { gesture: true })); });
 
   $('revoke').addEventListener('click', async function () {
@@ -337,5 +355,5 @@
   box.addEventListener('change', function () { setSaveEnabled(box.checked); setStatus(box.checked ? 'Saving copies is ON for the next page you explain.' : 'Saving copies is OFF. Nothing about the terms is stored.'); });
 
   globalThis.TCExplainUI = { show: show, renderAnalysis: renderAnalysis };
-  run();
+  start();
 })();

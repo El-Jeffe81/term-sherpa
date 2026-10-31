@@ -174,7 +174,7 @@ try {
   assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
   ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
   const manifestPerms = JSON.parse(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().permissions)'));
-  assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting']);
+  assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting', 'storage']);
   assert.equal(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().host_permissions || null) + JSON.stringify(chrome.runtime.getManifest().content_scripts || null)'), 'nullnull');
   assert.equal(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().optional_host_permissions)'), '["https://*/*"]');
   const grantedNow = await launcher.ev('chrome.permissions.getAll().then((a) => JSON.stringify(a))');
@@ -182,8 +182,27 @@ try {
   ok('loaded manifest: only activeTab + scripting, no up-front host access (only optional https), no content_scripts');
 
   const ex = await openTab(`chrome-extension://${extId}/explain/explain.html`);
+  // first run: the welcome screen is shown once, before anything else, and Continue remembers it
+  const DISCLAIMER = "Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.";
+  const vis = (id) => ex.ev(`!document.getElementById(${JSON.stringify(id)}).hidden && document.getElementById(${JSON.stringify(id)}).getClientRects().length > 0`);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await vis('welcome'), true, 'first run: welcome screen visible'); assert.equal(await vis('app'), false, 'nothing else is shown before Continue');
+  assert.match(await ex.ev('document.getElementById("welcome").textContent'), /Nothing leaves your device[\s\S]*Nothing is saved by default/);
+  assert.equal(await ex.ev('document.getElementById("welcome-go").textContent'), 'Continue');
+  assert.equal(await ex.ev('document.getElementById("disclaimer").textContent'), DISCLAIMER); assert.equal(await vis('disclaimer'), true, 'disclaimer visible on the welcome screen too');
+  assert.equal(await ex.ev('document.querySelector("header.brand img").complete && document.querySelector("header.brand img").naturalWidth'), 48, 'extension icon shown in the header');
+  await ex.ev('document.getElementById("welcome-go").click()'); await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await vis('welcome'), false); assert.equal(await vis('app'), true);
+  assert.equal(await ex.ev("chrome.storage.local.get('tc.welcomeSeen').then((o) => o['tc.welcomeSeen'])"), true, 'marker stored in chrome.storage.local');
   assert.match(await ex.ev('document.getElementById("status").textContent'), /click the Term Sherpa icon/i);
-  assert.match(await ex.ev('document.getElementById("notice").textContent'), /Informational, not legal advice/);
+  ok('first run: welcome screen (icon, what it does, nothing leaves the device, nothing saved) shown once; Continue stores the marker and shows the app');
+  const ex2 = await openTab(`chrome-extension://${extId}/explain/explain.html`); await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await ex2.ev('document.getElementById("welcome").hidden'), true, 'welcome is not shown a second time'); await send('Target.closeTarget', { targetId: ex2.targetId });
+  assert.equal(await vis('disclaimer'), true); assert.equal(await ex.ev('document.getElementById("disclaimer").textContent'), DISCLAIMER);
+  ok('welcome screen does not come back; the exact disclaimer is shown at the bottom of the explain window');
+  const iconInfo = JSON.parse(await launcher.ev(`JSON.stringify([...Object.values(chrome.runtime.getManifest().icons), ...Object.values(chrome.runtime.getManifest().action.default_icon)])`));
+  const missing = []; for (const f of [...new Set(iconInfo)]) { const okf = await launcher.ev(`fetch(chrome.runtime.getURL(${JSON.stringify(f)})).then((r) => r.ok && r.headers.get('content-type'))`); if (!/png/.test(okf || '')) missing.push(f); }
+  assert.deepEqual(missing, []); ok('all icon files named in the manifest load from the installed extension (' + [...new Set(iconInfo)].length + ' files)');
   await ex.ev('TCDB.clearAll().then(() => localStorage.clear())');
   const view = async (res) => JSON.parse(await ex.ev(`(async () => {
     const out = await TCExplainUI.show(${JSON.stringify(res)});
@@ -193,7 +212,7 @@ try {
       quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent), quoteVisible: [...li.querySelectorAll('blockquote')].some((b) => b.checkVisibility()) });
     return JSON.stringify({ kind: out.kind, hidden: document.getElementById('result').hidden, status: document.getElementById('status').textContent,
       summary: q('#overview-summary li'), points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map(point),
-      visibleText: document.getElementById('result').innerText, imgs: document.querySelectorAll('img, script:not([src]), iframe, object, embed').length, docs: (await TCDB.listDocs()).length });
+      visibleText: document.getElementById('result').innerText, imgs: document.querySelectorAll('#app img, #app script:not([src]), #app iframe, #app object, #app embed').length, docs: (await TCDB.listDocs()).length });
   })()`));
   const v1 = await view(terms);
   assert.equal(v1.kind, 'analysis'); assert.equal(v1.hidden, false);
@@ -312,7 +331,7 @@ try {
         points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map(point),
         docsSummary: document.getElementById('docs-count').textContent, docsHidden: document.getElementById('docs-read').hidden, docsOpen: document.getElementById('docs-read').open,
         docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')),
-        pwned: typeof window.__tcPwned, elems: document.querySelectorAll('img, iframe, object, embed, script:not([src])').length,
+        pwned: typeof window.__tcPwned, elems: document.querySelectorAll('#app img, #app iframe, #app object, #app embed, #app script:not([src])').length,
         visibleText: document.getElementById('result').innerText, savedDocs: (await TCDB.listDocs()).length });
     })()`));
 

@@ -7,8 +7,21 @@
   <link rel="stylesheet" href="explain.css">
 </head>
 <body>
-  <h1>Term Sherpa</h1>
-  <p class="notice" id="notice">Informational, not legal advice. This is an automatic scan done on this device with fixed rules (no AI, nothing is sent anywhere). It can miss things or misread them. Read the full terms, and talk to a lawyer if the decision matters.</p>
+  <header class="brand"><img src="../icons/icon-48.png" width="40" height="40" alt=""><h1>Term Sherpa</h1></header>
+
+  <section id="welcome" hidden aria-labelledby="h-welcome">
+    <h2 id="h-welcome">Welcome to Term Sherpa</h2>
+    <p>Term Sherpa explains the terms of service, privacy policy or "I agree" box you are looking at, in plain English.</p>
+    <ul class="welcome-points">
+      <li><strong>It only looks when you click its icon.</strong></li>
+      <li><strong>Nothing leaves your device.</strong> No accounts, no tracking, nothing about what you read is sent to anyone.</li>
+      <li><strong>Nothing is saved by default.</strong> When you close this window, it is forgotten.</li>
+      <li>The only time it goes online is to open a terms page you ask it to read, and your browser asks you first.</li>
+    </ul>
+    <button id="welcome-go" class="primary">Continue</button>
+  </section>
+
+  <div id="app">
   <div id="status" role="status" aria-live="polite">Reading the page...</div>
 
   <main id="result" hidden>
@@ -27,7 +40,9 @@
       <ul id="also-list" class="points"></ul>
     </section>
 
-    <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict. Not finding something does not mean the terms do not contain it. The full terms are on the page if you want to read them.</p>
+    <p id="nothing-found" class="nothing-found" hidden>Nothing found doesn't mean there's no risk.</p>
+
+    <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict.</p>
   </main>
 
   <section id="permission" hidden>
@@ -66,6 +81,10 @@
     <p><button id="revoke">Remove the site access I have allowed</button></p>
     <p><a id="saved-link" href="../popup/popup.html" target="_blank" rel="noopener">Open saved copies (advanced)</a></p>
   </details>
+
+  </div>
+
+  <p id="disclaimer" class="disclaimer">Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.</p>
 
   <script src="../core/untrusted.js"></script>
   <script src="../core/netguard.js"></script>

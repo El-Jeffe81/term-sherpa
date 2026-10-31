@@ -19,7 +19,8 @@
     "build:chrome": "node scripts/build.js chrome",
     "build:firefox": "node scripts/build.js firefox",
     "lint:firefox": "npx --yes web-ext@10.8.0 lint -s dist/firefox",
-    "probe:dnr": "node tests/e2e/dnr-probe.mjs"
+    "probe:dnr": "node tests/e2e/dnr-probe.mjs",
+    "probe:warnings": "node tests/e2e/warnings-probe.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

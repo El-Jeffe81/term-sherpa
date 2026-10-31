@@ -18,7 +18,7 @@ test('manifest has no content_scripts, no up-front host access, only activeTab +
   const m = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
   assert.equal(m.content_scripts, undefined);
   assert.equal(m.host_permissions, undefined, 'nothing is readable until the user approves a site in Chrome\'s prompt');
-  assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting']);
+  assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting', 'storage']);
   assert.deepEqual(m.optional_host_permissions, ['https://*/*'], 'optional, https only');
   assert.equal(m.optional_permissions, undefined);
   assert.equal(m.background, undefined);
@@ -93,6 +93,7 @@ test('required documents exist and mark every partner as pending owner approval'
 });
 
 // ---- Explain phase ----
+const DISCLAIMER = "Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.";
 const explainSrc = () => stripComments(fs.readFileSync(path.join(EXT, 'explain', 'explain.js'), 'utf8'));
 const launcherSrc = () => stripComments(fs.readFileSync(path.join(EXT, 'explain', 'launcher.js'), 'utf8'));
 
@@ -100,7 +101,7 @@ test('explain: the toolbar popup is the launcher; it opens a window with chrome.
   const m = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
   assert.equal(m.action.default_popup, 'explain/launcher.html');
   assert.equal(m.background, undefined);
-  assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting']);
+  assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting', 'storage']);
   const l = launcherSrc();
   assert.match(l, /chrome\.windows\.create\(/);
   assert.ok(!/executeScript|scripting|TCDB|indexedDB|localStorage/.test(l), 'launcher never reads the page or stores anything');
@@ -112,8 +113,11 @@ test('explain: the page is read in one place only (runOnPage, started from run()
   const body = /async function runOnPage[\s\S]*?\n  }\n/.exec(js)[0];
   assert.equal((body.match(/executeScript/g) || []).length, 3);
   assert.equal([...js.matchAll(/runOnPage\(/g)].length, 2, 'definition + one caller (run)');
-  assert.equal([...js.matchAll(/\brun\(\)/g)].length, 2, 'definition + one call at the end');
-  assert.ok(!/chrome\.(history|cookies|webRequest|downloads|identity|storage)/.test(js));
+  assert.equal([...js.matchAll(/\brun\(\)/g)].length, 3, 'definition + the two ways the window starts (start(), and Continue on the welcome screen)');
+  assert.ok(!/chrome\.(history|cookies|webRequest|downloads|identity)/.test(js));
+  const store = [...js.matchAll(/chrome\.storage\.\w+\.\w+/g)].map((m) => m[0]);
+  assert.deepEqual(store, ['chrome.storage.local.get', 'chrome.storage.local.set'], 'chrome.storage.local only (never sync), only get/set of the welcome marker');
+  assert.match(js, /WELCOME_KEY = 'tc\.welcomeSeen'/);
 });
 
 test('explain: page text is rendered with textContent only (no HTML sinks)', () => {
@@ -121,8 +125,8 @@ test('explain: page text is rendered with textContent only (no HTML sinks)', () 
   assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment|srcdoc|\.setAttribute\(\s*['"]on/.test(js));
   assert.ok(/\.textContent = text/.test(js), "page-derived strings are set through textContent");
   const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
-  assert.match(html, /Informational, not legal advice/, 'notice is in the page itself, before any result');
-  assert.ok(html.indexOf('Informational, not legal advice') < html.indexOf('id="result"'));
+  assert.ok(html.includes(DISCLAIMER), 'the exact disclaimer is in the page itself, in every state');
+  assert.ok(html.indexOf(DISCLAIMER) > html.indexOf('id="result"') && html.indexOf(DISCLAIMER) > html.indexOf('id="options"'), 'it is the last thing in the window');
 });
 
 test('explain: terms are NOT saved by default - TCDB is used only inside maybeSave(), which needs the opt-in flag', () => {
@@ -186,4 +190,21 @@ test('docs: README documents the Explain usage and implementation.md keeps CSO C
   const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
   assert.match(readme, /Explain/);
   assert.match(readme, /not legal advice/i);
+});
+
+test('first run: a welcome screen is shown once before first use, with the exact intro points and a Continue button;', () => {
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  assert.match(html, /id="welcome"[\s\S]*Nothing leaves your device[\s\S]*Nothing is saved by default[\s\S]*id="welcome-go"[^>]*>Continue</);
+  const js = explainSrc();
+  assert.match(js, /async function start\(\) \{\s*if \(await welcomeSeen\(\)\) \{ showApp\(true\); return run\(\); \}\s*showApp\(false\);/, 'run() waits for the welcome screen the first time');
+  assert.match(js, /welcome-go'\)\.addEventListener\('click', async function \(\) \{ await markWelcomeSeen\(\); showApp\(true\); run\(\); \}\)/);
+});
+
+test('every extension page header uses the extension icon, and the icon files exist in all sizes', () => {
+  for (const f of ['explain/explain.html', 'explain/launcher.html']) assert.match(fs.readFileSync(path.join(EXT, f), 'utf8'), /<img src="\.\.\/icons\/icon-48\.png"/);
+  for (const s of [16, 32, 48, 96, 128]) {
+    const b = fs.readFileSync(path.join(EXT, 'icons', 'icon-' + s + '.png'));
+    assert.equal(b.readUInt32BE(16), s); assert.equal(b.readUInt32BE(20), s); // PNG IHDR width/height
+  }
+  for (const f of ['icon.svg', 'icon-48.svg', 'icon-small.svg']) assert.match(fs.readFileSync(path.join(EXT, 'icons', f), 'utf8'), /^<svg /);
 });
