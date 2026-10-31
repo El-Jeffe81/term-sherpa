@@ -1,8 +1,8 @@
 # tc-prototype: local proof of concept for a free "terms guide" (working name, not decided)
 
-Phase: **Explain** (built on the consumption phase). Click the extension on a terms page and a window explains it in plain
+Phase: **Explain** (built on the consumption phase). Click the extension on a terms page, or at an "I agree" dialog, and a window explains it in plain
 English, briefly: a 3-line overview, then one plain sentence per point (High / Medium first, lower concerns after), judged
-in the context of the kind of site. The exact wording is one click away. The analysis is **on-device fixed rules, not AI**: no model, no network, nothing sent anywhere, and **nothing is
+in the context of the kind of site. The exact wording is one click away. The analysis is **on-device fixed rules, not AI**: no model; the only network use is fetching the documents an agree dialog links to, after you click and allow that site; nothing is sent anywhere, and **nothing is
 saved by default**. The older collection code (local dataset) is still there, off unless you opt in.
 Values: privacy first, protect humans, help humans. Informational tooling only, **not legal advice**.
 
@@ -44,7 +44,10 @@ Click the icon on a terms page. The window shows, top to bottom:
 2. **Overview**, three short lines: the site and kind of document, the type of service it guessed (news, shopping, social, finance, app, or "not clear"), and the headline takeaway. No word counts or other filler.
 3. **Worth knowing** (High and Medium) and **Also agreeing to** (lower concern): one plain sentence per point, with a badge. Related points are merged (arbitration, class action and jury waiver are one line, e.g. "You can't sue them in a class action lawsuit." when that is all there is). A small note appears when the kind of service changed how much a point matters (limited liability is routine on a news site, so it is Low there, but High on a bank or shop).
 4. **Show exact wording** under each point (closed by default): the quote(s) from the page, checked word for word; anything that cannot be verified is dropped. Very long sentences are shown in exact pieces, marked "Shortened". Read the full terms on the page if you want more.
-5. If the page is not a terms page, it lists the terms links it found. Pick one, open it, click the icon again. Nothing is analysed until then.
+5. **At an "I agree" dialog, banner or sign-up prompt** (for example a news site's "Legal Terms and Privacy" Agree dialog), click the icon there: the window finds the Terms, Privacy, Cookie policy and anything else the prompt links to, reads them for you and gives **one** combined explanation. Each point says which document it came from; identical points are merged. It never clicks Agree.
+   - First time for a site, Chrome asks you once to allow access to that site (an optional permission; nothing is allowed in advance). Because Chrome only asks after a click inside the window, you press **Read these N documents** once. Remove the access any time under Options.
+   - Documents are fetched logged out, over https, one request each (max 6), and not saved unless you tick "Save copies".
+6. If there is no dialog and the page is not a terms page, it lists the legal links it found, **one entry per document** (regional and language copies collapsed, preferring your language), 3 shown and the rest behind "Show more". Use "Explain this" on one, or "Explain all of these together".
 
 The 12 topics checked: forced arbitration, class-action waiver, jury trial waiver, data sold or shared, auto-renewal / recurring billing, the company changing the terms on its own, license to your content, liability limits and disclaimers, termination at will, governing law and venue, age requirements, tracking and cookies. The rules are in `extension/core/rules.js`; the engine is `extension/core/analyze.js`.
 
@@ -54,7 +57,7 @@ Not built (parked until Jeff decides): tracking what you have agreed to, and usi
 
 Older collection behaviour (still in the code; used only if you turn on "Save copies", or open the advanced popup). It does this on click, and only on click:
 - Injects a detector into the current tab with `chrome.scripting.executeScript` (permission `activeTab`; there is no
-  `content_scripts` entry in the manifest, and no host permissions).
+  `content_scripts` entry in the manifest, and no up-front host permissions; v0.3.0 adds only one optional `https://*/*` permission that is requested per site after a click, for the Explain window).
 - It lists terms / privacy / EULA / cookie links it finds (by link text, URL patterns and common paths such as
   `/terms`, `/privacy`; it only reports links that exist on the page, it never guesses URLs). Link text and URLs are
   recognised in English, Spanish, French, German, Portuguese and Italian; the language is shown, and PDF links are flagged.
@@ -109,7 +112,7 @@ CLI behaviour:
 - The user can export and delete everything from the popup.
 - Records carry `private_only = true`. Sharing or redistribution is blocked on a lawyer review (OPEN_QUESTIONS.md).
 - No model is bundled or downloaded. No third-party runtime dependency (PARTNERS.md).
-- Explain: the page is read on click with `activeTab`; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
+- Explain: the page is read on click with `activeTab`; the documents an agree dialog links to are fetched only after the click and a per-site Chrome permission prompt, logged out; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
 
 ## Known limitations (honest list)
 - The type-of-service guess can be wrong or "not clear", and the adjustments are judgement calls. Explain rules are sentence-level patterns: they can miss unusual wording or misread a sentence, and "nothing found" does not mean a term is absent. Severity is a rough guide. English only. Wording and severity have not had a lawyer's review. This is not legal advice.

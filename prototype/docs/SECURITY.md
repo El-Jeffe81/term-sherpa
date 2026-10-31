@@ -8,8 +8,10 @@ Decided by Jeff on 2026-10-31: the dataset stays on each user's device (IndexedD
 the CLI, mode 600). There is no central collection, no upload, no analytics. Records carry `private_only = true`.
 
 ## 2. What the extension is allowed to keep
-- It reads nothing until the user clicks. Permissions: `activeTab` + `scripting`; no host permissions, no content scripts,
-  no background worker, no `fetch`.
+- It reads nothing until the user clicks. Permissions: `activeTab` + `scripting`; no content scripts,
+  no background worker. Since v0.3.0 the Explain window may fetch the documents an agree dialog links to, using one *optional*
+  host permission (`https://*/*`) that is requested per site at click time (see `implementation.md`); the fetch code is
+  `extension/core/docfetch.js` only (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
 - **Only the terms document itself is saved**, never the page the user happens to be on.
   - Page is itself a terms page: its main text and sections are saved.
   - Page is any other page: **only the detected links** are stored (URL, link text, type, language, PDF flag and the
