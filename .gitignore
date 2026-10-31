@@ -25,3 +25,6 @@ chrome-profile*/
 
 # Archives
 *.zip
+
+# Build output (npm run build): packages are regenerated from extension/
+dist/
