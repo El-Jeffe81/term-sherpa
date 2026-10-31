@@ -145,6 +145,57 @@ try {
   assert.equal(f.dirtyText.replace(/\s+/g, ' ').trim(), 'ok text here'); assert.equal(f.cleared, '0/0');
   ok('real IndexedDB (v2): versions + diff, links (picked, PDF flag, unsafe refused), sections, sanitizing on save, export, delete, clear');
 
+  // (3) Explain window: launcher + explain page in the real extension, fed with the real injected-script result
+  const launcher = await openTab(`chrome-extension://${extId}/explain/launcher.html`);
+  assert.equal(await launcher.ev("typeof chrome.windows.create"), 'function');
+  assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
+  ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
+  const manifestPerms = JSON.parse(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().permissions)'));
+  assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting']);
+  assert.equal(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().host_permissions || null) + JSON.stringify(chrome.runtime.getManifest().content_scripts || null)'), 'nullnull');
+  ok('loaded manifest: only activeTab + scripting, no host permissions, no content_scripts');
+
+  const ex = await openTab(`chrome-extension://${extId}/explain/explain.html`);
+  assert.match(await ex.ev('document.getElementById("status").textContent'), /click the Terms Guide icon/i);
+  assert.match(await ex.ev('document.getElementById("notice").textContent'), /Informational, not legal advice/);
+  await ex.ev('TCDB.clearAll().then(() => localStorage.clear())');
+  const view = async (res) => JSON.parse(await ex.ev(`(async () => {
+    const out = await TCExplainUI.show(${JSON.stringify(res)});
+    const q = (sel) => [...document.querySelectorAll(sel)].map((n) => n.textContent);
+    return JSON.stringify({ kind: out.kind, hidden: document.getElementById('result').hidden, status: document.getElementById('status').textContent,
+      summary: q('#overview-summary li'), service: q('#service-quotes blockquote'), obligations: q('#obligation-quotes blockquote'),
+      cards: [...document.querySelectorAll('#risk-list .card')].map((c) => ({ cls: c.className, title: c.querySelector('h3').textContent, quotes: [...c.querySelectorAll('blockquote')].map((b) => b.textContent), explain: c.querySelector('p').textContent })),
+      agree: q('#agree-list li'), imgs: document.querySelectorAll('img, script:not([src]), iframe, object, embed').length, docs: (await TCDB.listDocs()).length });
+  })()`));
+  const v1 = await view(terms);
+  assert.equal(v1.kind, 'analysis'); assert.equal(v1.hidden, false);
+  assert.equal(v1.docs, 0, 'default: nothing saved in IndexedDB');
+  assert.match(v1.status, /Nothing was saved/);
+  assert.deepEqual(v1.cards.map((c) => c.cls.split(' ').pop()), ['sev-High', 'sev-High', 'sev-Medium', 'sev-Medium', 'sev-Medium', 'sev-Low', 'sev-Low', 'sev-Low'], 'ranked High, Medium, Low');
+  assert.ok(v1.cards.every((c) => c.quotes.length >= 1 && c.explain.length > 60));
+  for (const c of v1.cards) for (const qt of c.quotes) assert.ok(terms.extracted.text.replace(/\s+/g, ' ').includes(qt.replace(/\s+/g, ' ')), 'quote is verbatim in the page text: ' + qt);
+  assert.ok(v1.cards[0].quotes[0].includes('individual arbitration') );
+  assert.ok(v1.agree.length === 8 && v1.summary.length >= 3 && v1.service.length >= 1 && v1.obligations.length >= 1);
+  ok('explain window renders overview, ranked risks with exact quotes, and the agreeing list; nothing saved by default');
+
+  const hv = await view(await runIn(site.base + '/hostile/terms', {}));
+  assert.equal(hv.imgs, 0, 'no img/script/iframe elements created from page text');
+  ok('explain window: hostile page text is shown as text only (no elements created)');
+
+  await ex.ev("localStorage.setItem('tc.saveCopies','1')");
+  const v2 = await view(terms);
+  assert.equal(v2.docs, 1, 'with the explicit opt-in the old collection path saves a copy');
+  assert.match(v2.status, /because you turned that option on/);
+  await ex.ev("localStorage.removeItem('tc.saveCopies'); TCDB.clearAll()");
+  ok('opt-in "save copies" switches the old IndexedDB path on; off again afterwards');
+
+  const lk = await view(await runIn(site.base + '/about', {}));
+  assert.equal(lk.kind, 'links'); assert.equal(lk.hidden, true);
+  assert.equal(await ex.ev("document.querySelectorAll('#candidate-list li').length"), 4);
+  assert.equal(await ex.ev("localStorage.getItem('tc.saveCopies')"), null);
+  ok('explain window: non-terms page -> candidate links only, no analysis, no storage');
+  if (process.env.TC_SHOT) { await view(terms); const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT, Buffer.from(shot.data, 'base64')); }
+
   const nav = await popup.ev('JSON.stringify(performance.getEntriesByType("resource").map(r=>r.name).filter(n=>!n.startsWith("chrome-extension://")))');
   assert.equal(nav, '[]'); ok('popup made no non-extension network requests');
   assert.deepEqual(exceptions.filter((e) => !/127\.0\.0\.1/.test(e || '')), []); ok('no uncaught exceptions from extension code (the fixture page script error is ignored)');
