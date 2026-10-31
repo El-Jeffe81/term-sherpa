@@ -638,6 +638,6 @@ test('combined: one document with no label analyses exactly like analyze() (no s
 test('combined: documents are untrusted - hostile text only becomes quotes (plain strings) and injection hints', () => {
   const docs = NEWS_DOCS();
   const a = analyzeDocuments(docs, { host: 'www.dailyexample-news.test', via: 'dialog' });
-  assert.ok(a.injectionHints.length >= 1, 'the "ignore all previous instructions" sentence is flagged');
+  assert.ok(a.injectionHints >= 1, 'the "ignore all previous instructions" sentence is flagged');
   assert.ok(a.findings.every((f) => typeof f.line === 'string' && f.line.length < 120));
 });
