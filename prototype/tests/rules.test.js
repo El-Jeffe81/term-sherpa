@@ -575,3 +575,69 @@ test('floor: a pattern that is Low on its own (service providers) stays Low, and
     assert.equal(d.severity, 'Medium', 'floored, not Low');
   } finally { delete CONTEXT_MATRIX.disputes; }
 });
+
+/* ---------- several documents, one combined explanation ---------- */
+const { analyzeDocuments } = require('../extension/core/analyze');
+const docText = (f) => E.extractMainText(parseHtml(read(f))).text;
+const NEWS_DOCS = () => [
+  { label: 'Terms', doc_type: 'tos', url: 'https://docs.newsco.test/terms', text: docText('newsco/terms.html') },
+  { label: 'Privacy', doc_type: 'privacy', url: 'https://docs.newsco.test/privacy', text: docText('newsco/privacy.html') },
+  { label: 'Cookies', doc_type: 'cookies', url: 'https://docs.newsco.test/cookies', text: docText('newsco/cookies.html') },
+  { label: 'Community rules', doc_type: 'other', url: 'https://docs.newsco.test/community-guidelines', text: docText('newsco/community-guidelines.html') }
+];
+
+test('combined: a CNN-style Agree dialog (Terms + Privacy + Cookies + guidelines) gives ONE short list with source labels', () => {
+  const a = analyzeDocuments(NEWS_DOCS(), { host: 'www.dailyexample-news.test', via: 'dialog', unread: [{ label: 'Subscriber agreement', reason: 'needs JavaScript' }] });
+  assert.equal(a.overview.summary.length, 3);
+  assert.equal(a.overview.summary[0], 'dailyexample-news.test: Terms, Privacy, Cookies, Community rules (from the agree dialog).');
+  assert.deepEqual(a.overview.notes, ['Not read: Subscriber agreement (needs JavaScript).']);
+  assert.equal(a.context.type, 'news_media');
+  assert.deepEqual(a.documents.map((d) => d.label), ['Terms', 'Privacy', 'Cookies', 'Community rules']);
+  // data sale comes from the Privacy policy only; arbitration from the Terms only
+  assert.deepEqual(item(a, 'data_sharing').sources, ['Privacy']);
+  assert.deepEqual(item(a, 'arbitration').sources, ['Terms']);
+  assert.equal(item(a, 'data_sharing').severity, 'High');
+  assert.ok(a.findings.length <= 12);
+  assert.ok(a.findings.every((f) => f.sources.length >= 1));
+});
+
+test('combined: the same point in several documents is ONE finding listing every source, and the same quote is shown once', () => {
+  const a = analyzeDocuments(NEWS_DOCS(), { host: 'www.dailyexample-news.test', via: 'dialog' });
+  const ids = a.findings.map((f) => f.id);
+  assert.equal(new Set(ids).size, ids.length, 'no finding appears twice');
+  const track = item(a, 'tracking_cookies');
+  assert.deepEqual(track.sources, ['Terms', 'Privacy', 'Cookies']);
+  const quotes = track.evidence.map((e) => e.quote.replace(/\s+/g, ' ').toLowerCase());
+  assert.equal(new Set(quotes).size, quotes.length);
+  assert.ok(track.evidence.every((e) => ['Terms', 'Privacy', 'Cookies'].includes(e.source)));
+  assert.deepEqual(item(a, 'user_content_license').sources, ['Terms', 'Community rules']);
+  assert.deepEqual(item(a, 'termination').sources, ['Terms', 'Community rules']);
+});
+
+test('combined: the most serious reading across documents wins, and the floor and context apply to the combined set', () => {
+  const docs = [
+    { label: 'Terms', doc_type: 'tos', text: 'We share your personal information with service providers that help us run the service.' },
+    { label: 'Privacy', doc_type: 'privacy', text: 'We may sell your personal information to advertising partners.' }
+  ];
+  const a = analyzeDocuments(docs, { host: 'dailyexample-news.test', via: 'dialog' });
+  const f = item(a, 'data_sharing');
+  assert.equal(f.severity, 'High');
+  assert.equal(f.line, 'They may sell your personal data.');
+  assert.deepEqual(f.sources, ['Terms', 'Privacy']);
+});
+
+test('combined: one document with no label analyses exactly like analyze() (no source tags, same overview line)', () => {
+  const t = docText('newsco/terms.html');
+  const one = analyze(t, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  const via = analyzeDocuments([{ text: t, doc_type: 'tos' }], { host: 'dailyexample-news.test' });
+  assert.deepEqual(via.findings.map((f) => [f.id, f.severity, f.line]), one.findings.map((f) => [f.id, f.severity, f.line]));
+  assert.equal(one.overview.summary[0], 'dailyexample-news.test: terms of service.');
+  assert.ok(one.findings.every((f) => (f.sources || []).length === 0 && f.evidence.every((e) => !('source' in e))));
+});
+
+test('combined: documents are untrusted - hostile text only becomes quotes (plain strings) and injection hints', () => {
+  const docs = NEWS_DOCS();
+  const a = analyzeDocuments(docs, { host: 'www.dailyexample-news.test', via: 'dialog' });
+  assert.ok(a.injectionHints.length >= 1, 'the "ignore all previous instructions" sentence is flagged');
+  assert.ok(a.findings.every((f) => typeof f.line === 'string' && f.line.length < 120));
+});

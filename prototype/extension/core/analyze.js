@@ -107,7 +107,7 @@
 
   function verified(text, quote) { return TCQuote.verifyQuote(text, quote).verified; }
 
-  function scanRule(rule, sentences, text) {
+  function scanRule(rule, sentences, text, source) {
     var seen = {}, hits = [];
     sentences.forEach(function (s, i) {
       var m = matchSentence(rule, s);
@@ -125,9 +125,10 @@
       id: rule.id, title: rule.title, severity: hits[0].severity, priority: rule.priority,
       line: hits[0].line, explain: rule.explain,
       totalMatches: hits.length,
-      evidence: hits.slice(0, MAX_EVIDENCE).map(function (h) { return { quote: h.quote, severity: h.severity, truncated: h.truncated }; }),
+      evidence: hits.slice(0, MAX_EVIDENCE).map(function (h) { var e = { quote: h.quote, severity: h.severity, truncated: h.truncated }; if (source) e.source = source; return e; }),
       mitigation: null
     };
+    if (source) finding.sources = [source];
     (rule.mitigators || []).forEach(function (mt) {
       if (finding.mitigation) return;
       for (var i = 0; i < sentences.length; i++) {
@@ -136,6 +137,7 @@
           var q = excerpt(sentences[i], 0).text;
           if (verified(text, q)) {
             finding.mitigation = { note: mt.note, quote: q };
+            if (source) finding.mitigation.source = source;
             if (TCRules.SEVERITY_RANK[mt.severity] > TCRules.SEVERITY_RANK[finding.severity]) finding.severity = mt.severity;
           }
           break;
@@ -149,6 +151,39 @@
     return list.sort(function (a, b) {
       return TCRules.SEVERITY_RANK[a.severity] - TCRules.SEVERITY_RANK[b.severity] || a.priority - b.priority;
     });
+  }
+
+  /* ---------- several documents (an agree dialog links Terms + Privacy + Cookies ...) ---------- */
+  function unionSources(list) {
+    var out = [];
+    list.forEach(function (f) { (f.sources || []).forEach(function (x) { if (out.indexOf(x) < 0) out.push(x); }); });
+    return out;
+  }
+  function evidenceCap(sources) { return sources.length > 1 ? MAX_EVIDENCE * Math.min(sources.length, 3) : MAX_EVIDENCE; }
+
+  // One finding per rule across all documents: the most serious hit decides severity and wording, the same point made in
+  // two documents is ONE finding (with both sources), and a quote that appears twice is shown once.
+  function combineHits(scans) {
+    var rank = TCRules.SEVERITY_RANK, out = [];
+    TCRules.RULES.forEach(function (rule) {
+      var parts = [];
+      scans.forEach(function (sc) { var f = sc.ruleHits.filter(function (h) { return h.id === rule.id; })[0]; if (f) parts.push(f); });
+      if (!parts.length) return;
+      if (parts.length === 1) { out.push(parts[0]); return; }
+      var best = parts.slice().sort(function (a, b) { return rank[a.severity] - rank[b.severity]; })[0];
+      var seen = {}, evidence = [];
+      parts.forEach(function (f) {
+        f.evidence.forEach(function (e) { var k = TCQuote.normalizeWhitespace(e.quote); if (!seen[k]) { seen[k] = true; evidence.push(e); } });
+      });
+      var merged = Object.assign({}, best, {
+        totalMatches: parts.reduce(function (n, f) { return n + f.totalMatches; }, 0),
+        evidence: evidence.slice(0, evidenceCap(unionSources(parts))),
+        mitigation: best.mitigation || parts.map(function (f) { return f.mitigation; }).filter(Boolean)[0] || null,
+        sources: unionSources(parts)
+      });
+      out.push(merged);
+    });
+    return out;
   }
 
   /* ---------- merging, context ---------- */
@@ -167,17 +202,18 @@
         f.evidence.forEach(function (e) { var k = TCQuote.normalizeWhitespace(e.quote); if (!seen[k]) { seen[k] = true; evidence.push(e); } });
       });
       var mitig = has.arbitration && has.arbitration.mitigation ? has.arbitration.mitigation : null;
+      var gsources = unionSources(members);
       out.push({
         id: g.id, rules: members.map(function (f) { return f.id; }), title: g.title, severity: severity, baseSeverity: severity,
         priority: Math.min.apply(null, members.map(function (f) { return f.priority; })),
         line: g.line(has, !!mitig), explain: members.map(function (f) { return f.explain; }).join(' '),
         totalMatches: evidence.length + unseenExtra,
-        evidence: evidence.slice(0, MAX_EVIDENCE), mitigation: mitig, contextNote: ''
+        evidence: evidence.slice(0, evidenceCap(gsources)), mitigation: mitig, contextNote: '', sources: gsources
       });
     });
     hits.forEach(function (f) {
       if (used[f.id]) return;
-      out.push({ id: f.id, rules: [f.id], title: f.title, severity: f.severity, baseSeverity: f.severity, priority: f.priority, line: f.line, explain: f.explain, totalMatches: f.totalMatches, evidence: f.evidence, mitigation: f.mitigation, contextNote: '' });
+      out.push({ id: f.id, rules: [f.id], title: f.title, severity: f.severity, baseSeverity: f.severity, priority: f.priority, line: f.line, explain: f.explain, totalMatches: f.totalMatches, evidence: f.evidence, mitigation: f.mitigation, contextNote: '', sources: f.sources || [] });
     });
     return out;
   }
@@ -223,27 +259,45 @@
   var TYPE_LABEL = { tos: 'terms of service', privacy: 'privacy policy', eula: 'end-user licence agreement', cookies: 'cookie policy', other: 'legal document' };
   var CONTEXT_TYPES = TCContext.TYPES;
 
-  /*
-   * analyze(text, meta?) -> result object.  meta: { doc_type, title, host, context }
-   * meta.context (one of TCContext.TYPES) forces the service type; it is for tests and callers, never read from the page.
-   */
-  function analyze(rawText, meta) {
-    meta = meta || {};
+  function scanDocument(rawText, label) {
     var text = TCUntrusted.sanitizeText(String(rawText === undefined || rawText === null ? '' : rawText));
     var truncated = false;
     if (text.length > MAX_TEXT) { text = text.slice(0, MAX_TEXT); truncated = true; }
     var sentences = splitSentences(text);
-
-    var ruleHits = [], notFound = [];
+    var ruleHits = [];
     TCRules.RULES.forEach(function (rule) {
-      var f = scanRule(rule, sentences, text);
-      if (f) ruleHits.push(f); else notFound.push({ id: rule.id, title: rule.title });
+      var f = scanRule(rule, sentences, text, label);
+      if (f) ruleHits.push(f);
     });
+    return { text: text, truncated: truncated, sentences: sentences, ruleHits: ruleHits };
+  }
+
+  var VIA = { dialog: 'from the agree dialog', banner: 'from the consent banner', inline: 'linked where you agree', page: 'from this page', links: 'from the links on this page' };
+
+  /*
+   * analyzeDocuments(docs, meta) -> ONE combined result for several documents.
+   *   docs: [{ text, doc_type, label }]   label is the short source name shown next to each point ("Terms", "Privacy" ...)
+   *   meta: { host, title, context, via, unread: [{label, reason}] }
+   * Same rules, same context step, same floor. A point made in more than one document is one finding that lists every
+   * source. Findings carry `sources` (labels) and each quote carries `source`.
+   */
+  function analyzeDocuments(docs, meta) {
+    meta = meta || {};
+    docs = (docs || []).filter(function (d) { return d && typeof d.text === 'string'; });
+    var multi = docs.length > 1 || (docs.length === 1 && !!docs[0].label && !!meta.via);
+    var scans = docs.map(function (d) { return scanDocument(d.text, multi ? (d.label || '') : ''); });
+    var truncated = scans.some(function (sc) { return sc.truncated; });
+    var sentences = scans.reduce(function (n, sc) { return n + sc.sentences.length; }, 0);
+    var combinedText = scans.map(function (sc) { return sc.text.slice(0, 40000); }).join('\n');
+
+    var ruleHits = combineHits(scans), hitIds = {}, notFound = [];
+    ruleHits.forEach(function (f) { hitIds[f.id] = 1; });
+    TCRules.RULES.forEach(function (rule) { if (!hitIds[rule.id]) notFound.push({ id: rule.id, title: rule.title }); });
     sortFindings(ruleHits);
 
     var ctx = CONTEXT_TYPES.indexOf(meta.context) > -1 && meta.context !== 'other'
       ? { type: meta.context, label: TCContext.LABELS[meta.context], confident: true, reasons: ['caller'], line: 'Type of service: ' + TCContext.LABELS[meta.context] + '.' }
-      : TCContext.detect(meta.host, text);
+      : TCContext.detect(meta.host, combinedText);
 
     var findings = mergeGroups(ruleHits);
     applyContext(findings, ctx.type);
@@ -253,28 +307,40 @@
     var counts = { High: 0, Medium: 0, Low: 0 };
     findings.forEach(function (f) { counts[f.severity]++; });
 
-    var label = TYPE_LABEL[meta.doc_type] || 'legal document';
     var host = TCContext.hostOnly(meta.host);
-    var summary = [
-      (host || 'This page') + ': ' + label + '.',
-      ctx.line,
-      headline(findings)
-    ];
+    var first = docs[0] || {};
+    var l1;
+    if (multi) {
+      var labels = docs.map(function (d) { return d.label || TYPE_LABEL[d.doc_type] || 'document'; });
+      l1 = (host || 'This page') + ': ' + labels.join(', ') + (VIA[meta.via] ? ' (' + VIA[meta.via] + ')' : '') + '.';
+    } else l1 = (host || 'This page') + ': ' + (TYPE_LABEL[first.doc_type] || 'legal document') + '.';
+    var notes = truncated ? ['The text was very long, so only the first ' + MAX_TEXT.toLocaleString('en-US') + ' characters of a document were scanned.'] : [];
+    if ((meta.unread || []).length) notes.push('Not read: ' + meta.unread.map(function (u) { return u.label + ' (' + u.reason + ')'; }).join(', ') + '.');
 
     return {
       ok: true,
-      meta: { doc_type: meta.doc_type || '', title: TCUntrusted.sanitizeText(meta.title || ''), host: host },
-      stats: { sentences: sentences.length, truncated: truncated },
-      overview: { summary: summary, notes: truncated ? ['The text was very long, so only the first ' + MAX_TEXT.toLocaleString('en-US') + ' characters were scanned.'] : [] },
+      meta: { doc_type: multi ? '' : (first.doc_type || ''), title: TCUntrusted.sanitizeText(meta.title || ''), host: host },
+      documents: docs.map(function (d) { return { label: d.label || '', doc_type: d.doc_type || '', url: d.url || '' }; }),
+      stats: { sentences: sentences, truncated: truncated },
+      overview: { summary: [l1, ctx.line, headline(findings)], notes: notes },
       context: { type: ctx.type, label: ctx.label, confident: !!ctx.confident, reasons: ctx.reasons || [] },
       counts: counts,
       findings: findings,
       ruleHits: ruleHits,
       notFound: notFound,
-      injectionHints: TCUntrusted.injectionHints(text),
+      injectionHints: TCUntrusted.injectionHints(combinedText),
       notice: TCRules.NOTICE
     };
   }
 
-  return { analyze: analyze, splitSentences: splitSentences, excerpt: excerpt, MAX_QUOTE: MAX_QUOTE };
+  /*
+   * analyze(text, meta?) -> result object for ONE document.  meta: { doc_type, title, host, context }
+   * meta.context (one of TCContext.TYPES) forces the service type; it is for tests and callers, never read from the page.
+   */
+  function analyze(rawText, meta) {
+    meta = meta || {};
+    return analyzeDocuments([{ text: String(rawText === undefined || rawText === null ? '' : rawText), doc_type: meta.doc_type }], meta);
+  }
+
+  return { analyze: analyze, analyzeDocuments: analyzeDocuments, splitSentences: splitSentences, excerpt: excerpt, MAX_QUOTE: MAX_QUOTE };
 });
