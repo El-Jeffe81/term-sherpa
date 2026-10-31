@@ -1,0 +1,158 @@
+/*
+ * docfetch.js - reads the legal documents an agree dialog links to, on the user's click, and nothing else.
+ *
+ * This is the ONLY extension code that fetches anything. It is used from the Explain page after the user clicked the
+ * toolbar button (and, if needed, approved Chrome's one-time "allow access to <site>" prompt for just that site).
+ * Rules, all enforced here and covered by tests/docfetch.test.js:
+ *   - https only; the static SSRF guard (core/netguard.js) must pass: no localhost, private/link-local addresses, no
+ *     embedded credentials, no file:/data:/javascript:; account/checkout-looking URLs are never fetched
+ *   - at most MAX_DOCS documents per click, one request per distinct URL, sequentially, no crawling (links inside a
+ *     fetched document are never followed)
+ *   - credentials:'omit' (logged out, no cookies), no Referer, no custom User-Agent (the browser's honest default),
+ *     no cache, GET only
+ *   - a time limit and a size limit per document; only html / xhtml / plain text responses are read
+ *   - redirects are re-checked against the same guard (no downgrade to http, no hop to a private address)
+ *   - the response is parsed with an injected parser that builds an inert tree (the page's scripts, images and styles
+ *     are never run or loaded); all resulting text is treated as untrusted
+ * Nothing here stores anything. Dependencies (fetch, parser, guards) are injected so Node tests can drive it.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.TCDocFetch = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  var MAX_DOCS = 6;
+  var TIMEOUT_MS = 12000;
+  var MAX_BYTES = 2 * 1024 * 1024;
+  var MIN_TEXT = 200; // fewer characters than this after extraction = the page builds its text with JavaScript
+
+  function stripHash(u) { var i = u.indexOf('#'); return i < 0 ? u : u.slice(0, i); }
+
+  /*
+   * prepare(docs, deps) -> { accepted, rejected, origins }
+   * docs: [{url, label, doc_type, is_pdf?}] (already de-duplicated by document). deps: { guard, detect }
+   */
+  function prepare(docs, deps) {
+    var accepted = [], rejected = [], seen = {};
+    (docs || []).forEach(function (d) {
+      var url = stripHash(String(d.url || ''));
+      var reason = null, u = null;
+      try { u = new URL(url); } catch (e) { reason = 'not a valid link'; }
+      if (!reason) reason = deps.guard.urlProblem(u) ? 'link not allowed (' + deps.guard.urlProblem(u) + ')' : null;
+      if (!reason && u.protocol !== 'https:') reason = 'not an https link';
+      if (!reason && deps.detect.isSensitivePage(u.href)) reason = 'looks like an account or payment page';
+      if (!reason && (d.is_pdf || /\.pdf$/i.test(u.pathname))) reason = 'a PDF (open the link)';
+      var key = u ? u.href : url;
+      if (!reason && seen[key]) return;
+      if (u) seen[key] = true;
+      if (reason) { rejected.push({ label: d.label, url: url, doc_type: d.doc_type, reason: reason }); return; }
+      if (accepted.length >= MAX_DOCS) { rejected.push({ label: d.label, url: u.href, doc_type: d.doc_type, reason: 'only the first ' + MAX_DOCS + ' documents are read' }); return; }
+      accepted.push({ url: u.href, label: d.label, doc_type: d.doc_type, variants: d.variants });
+    });
+    return { accepted: accepted, rejected: rejected, origins: originsFor(accepted) };
+  }
+
+  // Chrome match patterns for the sites that must be allowed (ports are not part of a match pattern).
+  function originsFor(docs) {
+    var out = [];
+    docs.forEach(function (d) {
+      var p = 'https://' + new URL(d.url).hostname + '/*';
+      if (out.indexOf(p) < 0) out.push(p);
+    });
+    return out;
+  }
+
+  function readBody(res, deps, signal, limit) {
+    var declared = parseInt(res.headers && res.headers.get && res.headers.get('content-length') || '', 10);
+    if (declared > limit) return Promise.reject(new Error('too_large'));
+    if (!res.body || typeof res.body.getReader !== 'function') {
+      return res.arrayBuffer().then(function (b) { if (b.byteLength > limit) throw new Error('too_large'); return new Uint8Array(b); });
+    }
+    var reader = res.body.getReader(), chunks = [], total = 0;
+    function pump() {
+      if (signal && signal.aborted) { try { reader.cancel(); } catch (e) { /* ignore */ } return Promise.reject(new Error('timeout')); }
+      return reader.read().then(function (r) {
+        if (r.done) return null;
+        total += r.value.byteLength;
+        if (total > limit) { try { reader.cancel(); } catch (e) { /* ignore */ } throw new Error('too_large'); }
+        chunks.push(r.value);
+        return pump();
+      });
+    }
+    return pump().then(function () {
+      var out = new Uint8Array(total), o = 0;
+      chunks.forEach(function (c) { out.set(c, o); o += c.byteLength; });
+      return out;
+    });
+  }
+
+  function decode(bytes, contentType) {
+    var m = /charset=([\w\-]+)/i.exec(contentType || '');
+    var cs = m ? m[1] : 'utf-8';
+    try { return new TextDecoder(cs).decode(bytes); } catch (e) { return new TextDecoder('utf-8').decode(bytes); }
+  }
+
+  /*
+   * fetchDoc(doc, deps) -> Promise<{label, doc_type, url, ok, text?, title?, lang?, reason?, sections?}>
+   * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController? }
+   */
+  function fetchDoc(doc, deps) {
+    var AC = deps.AbortController || globalThis.AbortController;
+    var ctl = new AC(), timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS);
+    var limit = deps.maxBytes || MAX_BYTES;
+    var base = { label: doc.label, doc_type: doc.doc_type, url: doc.url, variants: doc.variants };
+    function fail(reason) { return Object.assign({ ok: false, reason: reason }, base); }
+
+    return Promise.resolve().then(function () {
+      return deps.fetch(doc.url, {
+        method: 'GET', credentials: 'omit', redirect: 'follow', referrerPolicy: 'no-referrer', cache: 'no-store',
+        signal: ctl.signal, headers: { Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9' }
+      });
+    }).then(function (res) {
+      var finalUrl = res.url || doc.url;
+      var bad = deps.guard.urlProblem(finalUrl);
+      if (bad) return fail('the site redirected somewhere that is not allowed');
+      if (!/^https:/i.test(finalUrl)) return fail('the site redirected to a non-https address');
+      if (!res.ok) return fail('the site answered with an error (' + res.status + ')');
+      var ct = (res.headers && res.headers.get && res.headers.get('content-type') || '').toLowerCase();
+      var kind = /^(text\/html|application\/xhtml\+xml)/.test(ct) ? 'html' : /^text\/plain/.test(ct) ? 'text' : '';
+      if (!kind) return fail(/pdf/.test(ct) ? 'a PDF (open the link)' : 'not a web page (' + (ct.split(';')[0] || 'unknown type') + ')');
+      return readBody(res, deps, ctl.signal, limit).then(function (bytes) {
+        var body = decode(bytes, ct), text, title = '', lang = '';
+        if (kind === 'text') text = body;
+        else {
+          var tree = deps.parseHtml(body);
+          var ex = deps.extract.extractMainText(tree);
+          var links = deps.detect.findLegalLinks(deps.extract.collectLinks(tree), finalUrl);
+          var cls = deps.detect.classifyPage({ url: finalUrl, title: ex.title, h1: ex.h1, textLength: ex.text.length, links: links });
+          if (cls.isHub) return fail('a list of links to other documents, not a document itself');
+          text = ex.text; title = ex.title; lang = ex.lang || '';
+        }
+        text = deps.untrusted.sanitizeText(text);
+        if (text.length < MIN_TEXT) return fail('needs JavaScript to show its text');
+        return Object.assign({ ok: true, text: text, title: deps.untrusted.sanitizeText(title || ''), lang: lang }, base);
+      });
+    }).catch(function (e) {
+      var m = String(e && e.message || e);
+      if (timedOut || m === 'timeout' || (e && e.name === 'AbortError')) return fail('the site took too long to answer');
+      if (m === 'too_large') return fail('too large to read here');
+      return fail('could not be reached (blocked, offline, or access not allowed)');
+    }).then(function (r) { clearTimeout(timer); return r; });
+  }
+
+  // Sequential, so a click makes at most MAX_DOCS requests, one at a time.
+  function fetchAll(docs, deps, onProgress) {
+    var out = [];
+    return docs.reduce(function (p, d, i) {
+      return p.then(function () {
+        if (onProgress) onProgress(i, docs.length, d);
+        return fetchDoc(d, deps).then(function (r) { out.push(r); });
+      });
+    }, Promise.resolve()).then(function () { return out; });
+  }
+
+  return { prepare: prepare, originsFor: originsFor, fetchDoc: fetchDoc, fetchAll: fetchAll, MAX_DOCS: MAX_DOCS, TIMEOUT_MS: TIMEOUT_MS, MAX_BYTES: MAX_BYTES, MIN_TEXT: MIN_TEXT };
+});
