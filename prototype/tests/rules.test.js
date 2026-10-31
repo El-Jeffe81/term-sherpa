@@ -658,4 +658,6 @@ test('data_sharing: a rule aimed at the user ("you may not use the API for selli
   assert.equal(has('We may sell your personal information to other companies.'), true);
   assert.equal(has('You agree that we may sell your personal information to partners.'), true);
   assert.equal(has('You may not opt out of the sale of your personal information.'), true);
+  assert.equal(has('If Google is involved in a merger, acquisition, or sale of assets, we will continue to ensure the confidentiality of your personal information.'), false, 'a sale of assets is not selling your data');
+  assert.equal(has('In a merger we may sell your personal information to the buyer.'), true, 'but an explicit sale in a merger sentence still counts');
 });
