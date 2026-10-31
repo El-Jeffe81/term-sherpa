@@ -659,5 +659,31 @@ test('data_sharing: a rule aimed at the user ("you may not use the API for selli
   assert.equal(has('You agree that we may sell your personal information to partners.'), true);
   assert.equal(has('You may not opt out of the sale of your personal information.'), true);
   assert.equal(has('If Google is involved in a merger, acquisition, or sale of assets, we will continue to ensure the confidentiality of your personal information.'), false, 'a sale of assets is not selling your data');
-  assert.equal(has('In a merger we may sell your personal information to the buyer.'), true, 'but an explicit sale in a merger sentence still counts');
+  assert.equal(has('In a merger we may sell your personal information to the buyer.'), false, 'a transfer to the buyer in a merger is not selling data to others');
+  assert.equal(has('We may sell your personal information to partners. In a merger we may transfer it to the buyer.'), true, 'a real sale sentence next to a merger sentence still counts');
+});
+
+test('data_sharing evidence: a denial is never shown as the quote (straight or curly apostrophe); no other evidence means no risk', () => {
+  const A = require('../extension/core/analyze');
+  const quotes = (t) => { const f = A.analyze(t, {}).findings.find((x) => x.id === 'data_sharing'); return f ? f.evidence.map((e) => e.quote) : null; };
+  for (const denial of ["And no, we don\u2019t sell your personal information.", "And no, we don't sell your personal information.", 'We never sell or rent your personal data.', 'We do not sell your personal information to third parties.', 'X does not share your personal information with advertisers or partners.']) {
+    assert.equal(quotes(denial), null, 'no risk from: ' + denial);
+  }
+  // a real clause elsewhere in the same text is kept, the denial next to it is not quoted
+  const q = quotes("And no, we don\u2019t sell your personal information. We may sell your personal information to advertising partners. We do not sell data of children.");
+  assert.deepEqual(q, ['We may sell your personal information to advertising partners.']);
+});
+
+test('data_sharing evidence: rights notes, headings, quoted defined terms and merger events are not "they sell your data" (Netflix / X privacy wording)', () => {
+  const A = require('../extension/core/analyze');
+  const f = (t) => A.analyze(t, {}).findings.find((x) => x.id === 'data_sharing') || null;
+  assert.equal(f('Business purpose of selling or sharing personal information'), null, 'a heading');
+  assert.equal(f('You have the right to request that we disclose: the categories of third parties to whom we disclose, sell, or share personal information; and the categories of personal information we have disclosed, sold, or shared about you for a business or commercial purpose.'), null, 'a "right to request" note');
+  assert.equal(f('Using these choices will not opt you out of the use of previously \u201csold\u201d (as defined by some US State Privacy Laws) personal information, or stop all Behavioral Advertising.'), null, 'a quoted, defined term');
+  assert.equal(f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy.'), null, 'a merger event');
+  // what is left for X: only the sentence that really says it shares with partners, as a lower-severity share risk (not "sell")
+  const x = f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy. And no, we don\u2019t sell your personal information. You can control whether X shares your personal information with these partners by using the \u201cData sharing with business partners\u201d option in your Privacy and Safety settings.');
+  assert.ok(x, 'the share sentence is kept'); assert.equal(x.evidence.length, 1); assert.match(x.evidence[0].quote, /^You can control whether X shares your personal information with these partners/);
+  assert.notEqual(x.line, 'They may sell your personal data.');
+  assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });

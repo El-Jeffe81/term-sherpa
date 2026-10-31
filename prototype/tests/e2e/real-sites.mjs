@@ -116,10 +116,11 @@ try {
       const out = JSON.parse(await win.ev(`JSON.stringify({ status: document.getElementById('status').textContent, err: document.getElementById('status').className === 'err',
         resultHidden: document.getElementById('result').hidden, summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent),
         risks: [...document.querySelectorAll('#risk-list li.point')].map((li) => (li.querySelector('.badge') ? li.querySelector('.badge').textContent : '') + ': ' + li.querySelector('.line .text').textContent),
+        quotes: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent) })),
         also: [...document.querySelectorAll('#also-list li.point')].map((li) => li.querySelector('.line .text').textContent),
         nothingFound: !document.getElementById('nothing-found').hidden, framesNote: !document.getElementById('frames').hidden, permission: !document.getElementById('permission').hidden,
         docs: [...document.querySelectorAll('details.docs li')].map((n) => n.textContent.slice(0, 160)), visibleLen: document.getElementById('result').innerText.length })`));
-      Object.assign(row, { status: out.status, statusErr: out.err, explained: !out.resultHidden, summary: out.summary, risks: out.risks, also: out.also, riskCount: out.risks.length + out.also.length, highCount: out.risks.filter((r) => /^High/.test(r)).length,
+      Object.assign(row, { quotes: out.quotes, status: out.status, statusErr: out.err, explained: !out.resultHidden, summary: out.summary, risks: out.risks, also: out.also, riskCount: out.risks.length + out.also.length, highCount: out.risks.filter((r) => /^High/.test(r)).length,
         nothingFound: out.nothingFound, framesNote: out.framesNote, docs: out.docs });
       await send('Target.activateTarget', { targetId: win.targetId }).catch(() => {}); const sh = await withTimeout(send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, win.sessionId), 20000, 'explain screenshot'); fs.writeFileSync(path.join(OUT, site.name + '.png'), Buffer.from(sh.data, 'base64'));
       await send('Target.activateTarget', { targetId: page.targetId }).catch(() => {}); const sp = await withTimeout(send('Page.captureScreenshot', { format: 'png' }, page.sessionId), 15000, 'page screenshot').catch(() => null); if (sp) fs.writeFileSync(path.join(OUT, site.name + '-page.png'), Buffer.from(sp.data, 'base64'));

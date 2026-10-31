@@ -88,7 +88,8 @@
   }
 
   function matchSentence(rule, s) {
-    for (var e = 0; e < (rule.exclude || []).length; e++) if (rule.exclude[e].test(s)) return null;
+    var plain = s.replace(/[\u2018\u2019\u02bc]/g, "'"); // curly apostrophes ("we don\u2019t sell") must not slip past the "don't" checks
+    for (var e = 0; e < (rule.exclude || []).length; e++) if (rule.exclude[e].test(s) || rule.exclude[e].test(plain)) return null;
     var best = null;
     for (var p = 0; p < rule.patterns.length; p++) {
       var pat = rule.patterns[p], ok = true;
