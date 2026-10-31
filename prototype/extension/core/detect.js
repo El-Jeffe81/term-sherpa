@@ -113,6 +113,11 @@
   // The page itself (not a link) sits in an encyclopedia/news/blog-style place, or has a headline instead of a document title:
   // an ARTICLE ABOUT terms ("Instagram changes its Terms of Service", Wikipedia's "Terms of service"), not the terms.
   var ARTICLE_PATH = /(^|\/)(wiki|news|blog|blogs|press|posts?|stories|story|magazine)(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  // ...unless the address ends in a plain legal page name ("/news/terms", "/press/privacy-policy"): that is the site's own terms page.
+  // (Never for wiki or dated addresses, where the same words name an article.)
+  var ARTICLE_STRICT = /(^|\/)wiki(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  var LEGAL_LEAF = /\/(terms|terms-(of|and)-(service|use|conditions?)|terms-conditions|tos|privacy|privacy-(policy|notice|statement)|cookies?|cookie-(policy|notice)|legal)\/?$/i;
+  function articlePath(p) { return ARTICLE_PATH.test(p) && (ARTICLE_STRICT.test(p) || !LEGAL_LEAF.test(p)); }
   var MAX_TITLE_WORDS = 9;
   function headlineLike(s) {
     var first = String(s || '').split(/\s[-\u2013\u2014|:\u00b7]\s/)[0].trim();
@@ -257,7 +262,7 @@
         if (TEXT_I18N[ti][1] !== 'other' && TEXT_I18N[ti][2].test(info.h1 || '') && /(^|\s)(pol[i\u00ed]tica|aviso|t[e\u00e9]rminos|condiciones|conditions|politique|nutzungsbedingungen|datenschutz|termos|termini|informativa|privacidade|confidentialit)/i.test(info.h1 || '')) { byTitle = TEXT_I18N[ti][1]; break; }
       }
     }
-    if (ARTICLE_PATH.test(p)) { byPath = null; byTitle = null; }
+    if (articlePath(p)) { byPath = null; byTitle = null; }
     else if (byTitle && headlineLike(info.h1 || '') && headlineLike(info.title || '')) byTitle = null;
     var len = info.textLength || 0;
     var sensitive = isSensitivePage(info.url);

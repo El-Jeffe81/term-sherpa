@@ -103,3 +103,12 @@ test('classifyPage: "Services Agreement" style documents (Microsoft) are recogni
 test('classifyPage: a help-centre article that IS the terms (Airbnb /help/article/2908) is still read as terms', () => {
   assert.equal(D.classifyPage({ url: 'https://www.airbnb.com/help/article/2908', title: 'Terms of Service - Airbnb Help Center', h1: 'Terms of Service', textLength: 30000 }).doc_type, 'tos');
 });
+
+test('a news/blog site\'s own terms page (address ends in a plain legal name) is still read as terms; articles about terms are not', () => {
+  const t = (url, title, h1) => D.classifyPage({ url, title, h1, textLength: 6000 }).isTerms;
+  assert.equal(t('https://example.org/news/terms', 'Terms of Service', 'Terms of Service'), true);
+  assert.equal(t('https://example.org/press/privacy-policy', 'Privacy Policy', 'Privacy Policy'), true);
+  assert.equal(t('https://example.org/blog/terms-of-service-update', 'We updated terms', 'We updated terms'), false);
+  assert.equal(t('https://example.org/2024/05/terms', 'Terms', 'Terms'), false);
+  assert.equal(t('https://en.wikipedia.org/wiki/Terms', 'Terms', 'Terms'), false);
+});

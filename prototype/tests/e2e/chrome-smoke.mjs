@@ -174,7 +174,14 @@ try {
   const launcher = await openTab(`chrome-extension://${extId}/explain/launcher.html`);
   assert.equal(await launcher.ev("typeof chrome.windows.create"), 'function');
   assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
-  await rshot(launcher, 'launcher');
+  if (process.env.TC_REVIEW) {
+    // the toolbar popup as it looks after a click on a normal page (the real strings from launcher.js), at popup width
+    await launcher.ev(`document.getElementById('status').textContent = 'The explanation window is open.'; document.getElementById('again').hidden = false;`);
+    await send('Emulation.setDeviceMetricsOverride', { width: 340, height: 230, deviceScaleFactor: 2, mobile: false }, launcher.sessionId);
+    await rshot(launcher, 'launcher');
+    await send('Emulation.clearDeviceMetricsOverride', {}, launcher.sessionId);
+    await launcher.ev(`document.getElementById('status').textContent = 'Opening the explanation window...'; document.getElementById('again').hidden = true;`);
+  }
   ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
   const manifestPerms = JSON.parse(await launcher.ev('JSON.stringify(chrome.runtime.getManifest().permissions)'));
   assert.deepEqual(manifestPerms.sort(), ['activeTab', 'scripting', 'storage']);
@@ -297,7 +304,7 @@ try {
   assert.equal(await ex.ev("localStorage.getItem('tc.saveCopies')"), null);
   ok('explain window: non-terms page -> candidate links only, no analysis, no storage');
   if (process.env.TC_SHOT) { await view(terms); const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, ex.sessionId); fs.writeFileSync(process.env.TC_SHOT, Buffer.from(shot.data, 'base64')); }
-  if (process.env.TC_REVIEW) { await view(terms); await rshot(ex, 'explain'); }
+  if (process.env.TC_REVIEW) { await view(terms); await ex.ev(`document.getElementById('welcome').hidden = true`); await rshot(ex, 'explain'); }
 
 
   // (4) The agree dialog: explain the documents it links to (Terms + Privacy + Cookies + ...), one combined explanation.
