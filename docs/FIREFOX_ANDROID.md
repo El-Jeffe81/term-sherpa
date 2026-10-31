@@ -43,19 +43,13 @@ On Android the Explain page opens as a normal **tab** (no popup windows). The to
 3. Extension install on release Firefox for Android needs an AMO listing (or an AMO-signed unlisted file); a temporary add-on needs a USB-connected device and `web-ext run -t firefox-android`.
 
 ## How to test it on a real phone (free)
-Pick ONE of the two ways. You need the Firefox package: `cd prototype && npm run build:firefox` gives `dist/firefox/` and `dist/term-sherpa-1.0.0-firefox.zip`.
+You need the Firefox package: `cd prototype && npm run build:firefox` gives `dist/firefox/`.
 
-**A. Firefox Nightly or Beta + about:debugging (no cable needed after setup)**
 1. On the phone install Firefox **Nightly** (or Beta) from Google Play. Release Firefox only installs add-ons from AMO.
-2. On the phone: Settings > About Firefox Nightly, tap the logo 5 times to turn on developer options, then Settings > Remote debugging via USB (on). Android: turn on Developer options > USB debugging.
-3. On the computer: install Android Platform Tools (`adb`), connect the phone by USB, run `adb devices` and accept the prompt on the phone.
-4. In desktop Firefox open `about:debugging`, "Setup", add the phone, connect, then "Load Temporary Add-on" is not offered for remote devices, so use option B for loading the add-on.
-
-**B. `web-ext run` with adb (this loads the add-on)**
-1. Same phone preparation as A steps 1-3 (`adb devices` must list the phone).
-2. `cd prototype/dist/firefox`
-3. `npx web-ext@10.8.0 run -t firefox-android --android-device <id from adb devices> --firefox-apk org.mozilla.fenix` (Nightly; use `org.mozilla.firefox_beta` for Beta, `org.mozilla.firefox` for release builds that allow it).
-4. Firefox on the phone restarts with Term Sherpa loaded as a temporary add-on.
+2. On the phone turn on Developer options and USB debugging (Android Settings > About phone > tap "Build number" 7 times). In Firefox Nightly: Settings > Advanced > Remote debugging via USB (on).
+3. On the computer install Android Platform Tools (`adb`), connect the phone by USB, run `adb devices` and accept the prompt on the phone. Note the device id it prints.
+4. `cd prototype/dist/firefox`, then `npx web-ext@10.8.0 run -t firefox-android --android-device <device id> --firefox-apk org.mozilla.fenix` (Nightly; `org.mozilla.firefox_beta` for Beta). Firefox on the phone restarts with Term Sherpa loaded as a temporary add-on, and it is removed when you stop the command.
+5. Optional: in desktop Firefox open `about:debugging`, connect to the phone, and inspect the extension's pages and console if something fails.
 
 **What to check (write the results in OPEN_QUESTIONS.md)**
 1. Open the extensions menu (three dots > Add-ons / Extensions), tap Term Sherpa. Expected: first time, the welcome screen, then "Continue".
