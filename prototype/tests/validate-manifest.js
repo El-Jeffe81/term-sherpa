@@ -29,7 +29,8 @@ function validate(EXT, target) {
   ok(!('background' in m), 'no background/service worker needed');
   ok(!('web_accessible_resources' in m), 'no web_accessible_resources');
   ok(!('externally_connectable' in m), 'no externally_connectable');
-  ok(!('permissions' in m) || JSON.stringify([...m.permissions].sort()) === JSON.stringify(['activeTab', 'scripting', 'storage']), 'permissions must be exactly activeTab + scripting + storage');
+  const wantPerms = target === 'firefox' ? ['activeTab', 'dns', 'scripting', 'storage'] : ['activeTab', 'scripting', 'storage'];
+  ok(JSON.stringify([...(m.permissions || [])].sort()) === JSON.stringify(wantPerms), 'permissions must be exactly ' + wantPerms.join(' + ') + (target === 'firefox' ? ' (dns is Firefox-only: browser.dns.resolve)' : ''));
   ok(!('optional_permissions' in m), 'no optional_permissions');
   ok(Array.isArray(m.permissions) && m.permissions.includes('activeTab') && m.permissions.includes('scripting') && m.permissions.includes('storage'), 'activeTab, scripting and storage required');
   ok(m.action && m.action.default_popup, 'action.default_popup required');
@@ -99,7 +100,9 @@ function validatePackages() {
   // Firefox manifest = shared manifest + overlay only: removing the overlay keys gives the shared manifest back.
   const fm = JSON.parse(fs.readFileSync(path.join(out.firefox.dir, 'manifest.json'), 'utf8'));
   delete fm.browser_specific_settings;
-  if (JSON.stringify(fm) !== JSON.stringify(JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')))) errors.push('firefox manifest differs from the shared manifest by more than browser_specific_settings');
+  if (!fm.permissions.includes('dns')) errors.push('firefox manifest must add the Firefox-only "dns" permission');
+  fm.permissions = fm.permissions.filter((p) => p !== 'dns');
+  if (JSON.stringify(fm) !== JSON.stringify(JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')))) errors.push('firefox manifest differs from the shared manifest by more than browser_specific_settings and the Firefox-only dns permission');
   return errors;
 }
 

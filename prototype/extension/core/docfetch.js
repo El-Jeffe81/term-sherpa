@@ -16,6 +16,8 @@
  *     (verified in headless Chrome, see tests/e2e/dnr-probe.mjs) that needs the "Block content on any page" install warning;
  *     the warning-free variant (declarativeNetRequestWithHostAccess) does not cover sites we have no access to, which is exactly
  *     the case that matters. Not following redirects means nothing is ever requested from an address we have not vetted.
+ *   - Firefox only: deps.dnsCheck (core/dnsguard.js, browser.dns.resolve) refuses a name that resolves to a private/loopback/link-local/reserved
+ *     address before any request; Chrome has no such API and keeps the static checks only
  *   - IP-literal hosts (https://203.0.113.9/...) are refused as well as private ranges: legal documents live on named sites
  *   - before each document, https://<site>/robots.txt is read the same guarded way (core/robots.js); a disallow skips the document
  *   - the response is parsed with an injected parser that builds an inert tree (the page's scripts, images and styles
@@ -104,7 +106,7 @@
   /*
    * fetchDoc(doc, deps) -> Promise<{label, doc_type, url, ok, text?, title?, lang?, reason?, sections?}>
    * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController?,
-   *   robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
+   *   dnsCheck? (Firefox only, see above), robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
    */
   function isRedirect(res) {
     return res.type === 'opaqueredirect' || res.redirected === true || (res.status >= 300 && res.status < 400);
@@ -119,8 +121,13 @@
     function fail(reason) { return Object.assign({ ok: false, reason: reason }, base); }
 
     return Promise.resolve().then(function () {
+      // Firefox only (deps.dnsCheck exists only there): a name that resolves to a private/internal address is never requested, not even robots.txt
+      return deps.dnsCheck ? deps.dnsCheck(new URL(doc.url).hostname) : null;
+    }).then(function (dnsProblem) {
+      if (dnsProblem) return { skipped: fail('not opened: ' + dnsProblem) };
       return robotsCheck ? robotsCheck(doc.url) : { allowed: true };
     }).then(function (rb) {
+      if (rb.skipped) return rb;
       if (!rb.allowed) return { skipped: fail(rb.reason) };
       timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS); // starts after the robots.txt check
       return deps.fetch(doc.url, {

@@ -99,12 +99,12 @@ try {
   const ext1 = await openExtPage('explain/launcher.html');
   const loaded = await exec(`const m = chrome.runtime.getManifest(); return JSON.stringify({ perms: m.permissions, host: m.host_permissions || null, cs: m.content_scripts || null, opt: m.optional_host_permissions, bg: m.background || null, gecko: m.browser_specific_settings.gecko.id, api: [typeof chrome.windows.create, typeof chrome.scripting.executeScript, typeof chrome.permissions.request, typeof chrome.tabs.create] })`);
   const lj = JSON.parse(loaded);
-  assert.deepEqual(lj.perms.slice().sort(), ['activeTab', 'scripting']); assert.deepEqual(lj.host || [], []); assert.deepEqual(lj.cs || [], []); assert.ok(!lj.bg || Object.keys(lj.bg).length === 0, 'no background: ' + JSON.stringify(lj.bg)); // Firefox reports absent lists as []
+  assert.deepEqual(lj.perms.slice().sort(), ['activeTab', 'dns', 'scripting', 'storage']); assert.deepEqual(lj.host || [], []); assert.deepEqual(lj.cs || [], []); assert.ok(!lj.bg || Object.keys(lj.bg).length === 0, 'no background: ' + JSON.stringify(lj.bg)); // Firefox reports absent lists as []
   assert.deepEqual(lj.opt, ['https://*/*']); assert.equal(lj.gecko, ADDON_ID); assert.deepEqual(lj.api, ['function', 'function', 'function', 'function']);
   const granted0 = JSON.parse(await execAsync('return JSON.stringify(await chrome.permissions.getAll())'));
   assert.deepEqual(granted0.origins || [], [], 'no site access at install time');
   assert.match(await text('status'), /./);
-  ok('loaded manifest in Firefox: only activeTab + scripting, no up-front host access, no content_scripts, no background; chrome.* APIs present (promises)');
+  ok('loaded manifest in Firefox: activeTab + scripting + storage (+ Firefox-only dns), no up-front host access, no content_scripts, no background; chrome.* APIs present (promises)');
 
   // (2) without the click the extension cannot touch the news page (activeTab not yet granted)
   const homeTabId = await execAsync(`const me = await chrome.tabs.getCurrent(); const all = await chrome.tabs.query({}); return all.map((t) => t.id).filter((i) => i !== me.id)[0];`);
@@ -127,6 +127,30 @@ try {
   await waitFor('Explain page', async () => (await exec('return location.href')).includes('/explain/explain.html?tab='));
   ok('toolbar action -> popup launcher -> Explain window opened for the news tab (type "popup" window)');
 
+  // (3b) first run: the welcome screen comes first (once); the exact disclaimer is always at the bottom; icon in the header
+  const DISCLAIMER = "Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.";
+  const shown = (id) => exec(`const e = document.getElementById(${JSON.stringify(id)}); return !e.hidden && e.getClientRects().length > 0`);
+  await waitFor('welcome screen', async () => await shown('welcome')); assert.equal(await shown('app'), false);
+  assert.equal(await text('disclaimer'), DISCLAIMER);
+  assert.equal(await exec('const i = document.querySelector("header.brand img"); return i.complete && i.naturalWidth'), 48);
+  await exec('document.getElementById("welcome-go").click(); return 1');
+  await waitFor('welcome dismissed', async () => (await shown('app')) && !(await shown('welcome')));
+  assert.equal(await execAsync("return (await chrome.storage.local.get('tc.welcomeSeen'))['tc.welcomeSeen']"), true);
+  ok('first run in Firefox: welcome screen (icon, intro) then Continue stores the marker in storage.local; exact disclaimer shown');
+
+  // (3c) Firefox-only DNS check with the REAL browser.dns.resolve. The test fixture name docs.newsco.test is mapped to 127.0.0.1 by
+  // network.dns.localDomains - exactly the "public-looking name that points at this computer" case the check exists to refuse.
+  const dnsOut = JSON.parse(await execAsync(`const c = TCDnsGuard.fromBrowser(globalThis, TCNetGuard);
+    const r = { present: typeof c, fixture: await c('docs.newsco.test'), localhost: await c('localhost') };
+    // a real public name: only meaningful where DNS gives real answers (some sandboxes answer every name with 198.18.0.1, a reserved address, which the check rightly refuses)
+    try { const a = (await browser.dns.resolve('example.com')).addresses; r.pubAddrs = a; r.pubExpected = a.some((x) => TCNetGuard.isBlockedIp(x)) ? 'refused' : 'allowed'; r.pub = await c('example.com'); } catch (e) { r.pub = 'offline'; }
+    return JSON.stringify(r);`));
+  assert.equal(dnsOut.present, 'function'); assert.match(dnsOut.fixture, /private or internal address/); assert.match(dnsOut.localhost, /private or internal address/); 
+  if (dnsOut.pub !== 'offline') { if (dnsOut.pubExpected === 'allowed') assert.equal(dnsOut.pub, null, 'a real public name is allowed'); else assert.match(dnsOut.pub, /private or internal address/, 'reserved answer (' + dnsOut.pubAddrs + ') refused'); }
+  ok('Firefox DNS check (browser.dns.resolve): names pointing at 127.0.0.1 refused; example.com resolved to ' + dnsOut.pubAddrs + ' -> ' + (dnsOut.pub === null ? 'allowed' : dnsOut.pub === 'offline' ? 'lookup unavailable' : 'refused (reserved address)'));
+  // the rest of this test serves its fixture from a name that resolves to 127.0.0.1, so switch the check off in THIS page only (test harness, not extension code)
+  await exec('TCDnsGuard.fromBrowser = function () { return null; }; return 1');
+
   // (4) the page was read (activeTab was granted by the action); documents wait for the user's click
   const hitsBefore = tlsHits.length;
   await waitFor('permission step', async () => (await exec('return !document.getElementById("perm-go").closest("section").hidden')));
@@ -142,7 +166,7 @@ try {
   catch (e) { console.error('  status text: ' + (await text('status')) + ' | granted: ' + (await execAsync('return JSON.stringify(await chrome.permissions.getAll())')) + ' | hits: ' + JSON.stringify(tlsHits.map((h) => h.url)) + ' | fetch: ' + (await execAsync("try { const r = await fetch('https://docs.newsco.test/robots.txt', {credentials:'omit',redirect:'manual'}); return r.status + ' ' + r.type; } catch (e) { return 'ERR ' + e.message; }"))); throw e; }
   const view = JSON.parse(await exec(`return JSON.stringify({ status: document.getElementById('status').textContent, summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent),
     points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, cls: li.className, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '', open: li.querySelector('details').open, quotes: li.querySelectorAll('blockquote').length })),
-    docs: document.getElementById('docs-count').textContent, pwned: typeof window.__tcPwned, elems: document.querySelectorAll('img, iframe, object, embed, script:not([src])').length })`));
+    docs: document.getElementById('docs-count').textContent, pwned: typeof window.__tcPwned, elems: document.querySelectorAll('#app img, #app iframe, #app object, #app embed, #app script:not([src])').length })`));
   assert.match(view.status, /Read 4 documents\. Nothing was saved\./);
   assert.match(view.summary[0], /: Terms, Privacy, Cookies, Community rules \(from the agree dialog\)\.$/);
   const by = (re) => view.points.find((p) => re.test(p.line));

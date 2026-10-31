@@ -203,7 +203,8 @@
   // chrome.permissions.request only works from a user gesture; without one it fails and we show the button instead.
   function requestAccess(origins) { return chrome.permissions.request({ origins: origins }).then(function (ok) { return !!ok; }, function () { return false; }); }
   function fetchDeps() {
-    return { fetch: window.fetch.bind(window), parseHtml: TCDomParse.parseHtml, guard: TCNetGuard, detect: TCDetect, extract: TCExtract, untrusted: TCUntrusted };
+    // dnsCheck: only in Firefox (browser.dns.resolve); null elsewhere, which docfetch treats as "no DNS check"
+    return { fetch: window.fetch.bind(window), parseHtml: TCDomParse.parseHtml, guard: TCNetGuard, detect: TCDetect, extract: TCExtract, untrusted: TCUntrusted, dnsCheck: TCDnsGuard.fromBrowser(globalThis, TCNetGuard) };
   }
   function siteNames(origins) { return origins.map(function (o) { return o.replace(/^https:\/\//, '').replace(/\/\*$/, ''); }).join(', '); }
 
