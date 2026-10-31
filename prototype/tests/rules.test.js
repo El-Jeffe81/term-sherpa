@@ -695,5 +695,7 @@ test('data_sharing evidence: rights notes, headings, quoted defined terms and me
   assert.equal(f('Under certain circumstances, participants may be liable for the transfer of personal data from the EU, Switzerland and the UK to third parties outside the EU, Switzerland and the UK.'), null, 'a liability note');
   { const sp = f('We may disclose your personal information to third-party service providers who perform tasks on our behalf.'); assert.ok(sp); assert.equal(sp.severity, 'Low', 'service providers are the lower-severity case'); }
   assert.notEqual(f('Advertisers and other third parties may receive your personal information when you use the service.'), null, 'third parties receiving data still counts');
+  assert.equal(f('Advertising Companies: We may collect advertising information about you from other sources to support advertisements.'), null, 'collecting from advertisers is not sharing with them');
+  assert.notEqual(f('At times, Apple may make certain personal data available to strategic partners that work with Apple to provide products and services, or that help Apple market to customers.'), null, 'real partner sharing (Apple wording) still counts');
   assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });
