@@ -28,7 +28,7 @@ export const SITES = [
   { name: 'apple-site-terms', kind: 'big service terms', url: 'https://www.apple.com/legal/internet-services/terms/site.html', expect: 'explained' },
   { name: 'microsoft-services', kind: 'big service terms', url: 'https://www.microsoft.com/en-us/servicesagreement', expect: 'explained' },
   { name: 'microsoft-privacy', kind: 'big service privacy', url: 'https://privacy.microsoft.com/en-us/privacystatement', expect: 'explained' },
-  { name: 'amazon-conditions', kind: 'big service terms', url: 'https://www.amazon.com/gp/help/customer/display.html?nodeId=GLSBYFE9MYSKQEEH', expect: 'explained' },
+  { name: 'amazon-conditions', kind: 'big service terms', url: 'https://www.amazon.com/gp/help/customer/display.html?nodeId=GLSBYFE9MGKKQXXM', expect: 'explained' },
   { name: 'netflix-terms', kind: 'big service terms', url: 'https://help.netflix.com/legal/termsofuse', expect: 'explained' },
   { name: 'netflix-privacy', kind: 'big service privacy', url: 'https://help.netflix.com/legal/privacy', expect: 'explained' },
   { name: 'spotify-terms', kind: 'big service terms', url: 'https://www.spotify.com/us/legal/end-user-agreement/', expect: 'explained' },

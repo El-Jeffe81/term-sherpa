@@ -112,7 +112,7 @@
 
   // The page itself (not a link) sits in an encyclopedia/news/blog-style place, or has a headline instead of a document title:
   // an ARTICLE ABOUT terms ("Instagram changes its Terms of Service", Wikipedia's "Terms of service"), not the terms.
-  var ARTICLE_PATH = /(^|\/)(wiki|news|blog|blogs|article|articles|press|posts?|stories|story|magazine)(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  var ARTICLE_PATH = /(^|\/)(wiki|news|blog|blogs|press|posts?|stories|story|magazine)(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
   var MAX_TITLE_WORDS = 9;
   function headlineLike(s) {
     var first = String(s || '').split(/\s[-\u2013\u2014|:\u00b7]\s/)[0].trim();

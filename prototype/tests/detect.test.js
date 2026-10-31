@@ -99,3 +99,7 @@ test('classifyPage: "Services Agreement" style documents (Microsoft) are recogni
   assert.equal(D.classifyPage({ url: 'https://a.test/page', title: 'Customer Agreement', h1: '', textLength: 4000 }).doc_type, 'tos');
   assert.equal(D.classifyPage({ url: 'https://a.test/legal/service-agreement', title: '', h1: '', textLength: 4000 }).doc_type, 'tos');
 });
+
+test('classifyPage: a help-centre article that IS the terms (Airbnb /help/article/2908) is still read as terms', () => {
+  assert.equal(D.classifyPage({ url: 'https://www.airbnb.com/help/article/2908', title: 'Terms of Service - Airbnb Help Center', h1: 'Terms of Service', textLength: 30000 }).doc_type, 'tos');
+});
