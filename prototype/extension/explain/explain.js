@@ -222,6 +222,7 @@
       showCandidates(links, ctx);
       return { kind: 'links' };
     }
+    if (ctx.gesture) setStatus('Waiting for Chrome to ask you about access to ' + siteNames(prep.origins) + '...');
     var granted = ctx.gesture ? await requestAccess(prep.origins) : (await hasAccess(prep.origins)) || (await requestAccess(prep.origins));
     if (!granted) {
       if (ctx.gesture) setStatus('Chrome did not give access to ' + siteNames(prep.origins) + ', so nothing was read.', true);
