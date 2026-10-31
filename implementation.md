@@ -77,3 +77,10 @@ Known limits
 Parked (needs Jeff's decision, nothing built)
 - **"Track what I've agreed to"**: a record of the terms a user accepted, with dates and versions. Not built; it would store personal data and needs a design and privacy decision first.
 - **Chrome's built-in on-device AI (Prompt API)**: not used and not wired in. Needs Jeff's approval first.
+
+### Other browsers (branch feat/other-browsers)
+- One source, two packages: `npm run build` (in `prototype/`) writes `dist/chrome` and `dist/firefox` (plus zips). The Firefox manifest is the shared manifest plus `manifests/firefox.overlay.json` (gecko id, minimum versions 140 desktop / 142 Android, `data_collection_permissions: none`). No source is duplicated; `validate-manifest.js` proves the files are identical apart from the manifest.
+- No `chrome`/`browser` shim: Firefox MV3 returns promises from `chrome.*`. There is no background page, so no service-worker conversion was needed.
+- Found by the Firefox e2e and fixed: `scripting.executeScript` file paths must start with `/` (extension root); Firefox resolves bare paths against the calling page.
+- The launcher falls back to a normal tab when `windows.create` is missing (Firefox for Android). Pages have a viewport meta tag. User-facing text says "your browser", not "Chrome".
+- Tested headless on Linux: Chrome, Edge, Brave, Vivaldi, Opera (35 checks each), Firefox 159 (12 checks), `web-ext lint` clean. Not tested: a human toolbar click, the real permission prompt, Firefox for Android, Windows/macOS, Safari. See `docs/BROWSER_TESTING.md`, `docs/FIREFOX_ANDROID.md`, `docs/PUBLISHING.md`.
