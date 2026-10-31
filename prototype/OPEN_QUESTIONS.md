@@ -8,9 +8,8 @@
    OTA's ODC-By covers only its database, not the underlying text, and that whether archiving or republishing is permitted depends
    on jurisdiction **[unverified; needs a lawyer]**. This prototype does not redistribute anything: the zip contains only invented
    fixture text, and export of real text is opt-in (`--include-text`).
-3. **Naming.** Decided by Jeff on 2026-10-31: **Term Sherpa** (repo `El-Jeffe81/term-sherpa`). Choose one before any store listing or public docs;
-   check trademark and domain availability (not done here).
-4. **Licence for our own code.** `package.json` says UNLICENSED for now. Pick one before sharing.
+3. **Naming.** Decided by Jeff on 2026-10-31: **Term Sherpa** (repo `El-Jeffe81/term-sherpa`). Still open: trademark and domain availability were not checked.
+4. **Licence for our own code.** Decided: GPL-3.0-only (`LICENSE`, `package.json`, README), copyright 2026 El-Jeffe81.
 5. **Partners.** Approve or reject each item in PARTNERS.md, especially Readability (better extraction) and anything that
    downloads a model in the next phase.
 6. **robots.txt policy.** The CLI refuses when robots.txt is disallow, 5xx, 401 or 403, and treats 404 as allowed. Is that the
@@ -50,8 +49,18 @@
 ## Other browsers (added on branch feat/other-browsers)
 - **Add-on ID (permanent on AMO once published)**: decided by Jeff on 2026-10-31: `term-sherpa@el-jeffe81.github.io`.
 - **Firefox minimum version 140** (desktop) / **142** (Android): needed for the `data_collection_permissions` declaration AMO requires for new add-ons. Is dropping older Firefox releases acceptable?
-- **Android listing**: the manifest already marks Firefox for Android as supported, but it could not be run here. Ship it after a device test, or remove the `gecko_android` block for the first release?
+- **Android listing**: the manifest marks Firefox for Android (142+) as supported; it has not been run on a real phone. Ship the Android listing before a device test, or untick Android on the first AMO submission? (See `docs/FIREFOX_ANDROID.md`.)
 - **Publishing routes (free only)**: GitHub-release zip for Chrome-family users, AMO and Edge Add-ons. The Chrome Web Store is excluded (US$5 fee). Confirm, and say who creates the accounts and the release (nothing was created). See `docs/PUBLISHING.md`.
-- **Icons**: the manifest has none; stores want them. Who makes them?
+- **Icons**: done (concept A, approved; 16-128 px, in the manifest).
 - **Manual check per browser family**: a visible-window run with a real toolbar click and the real permission prompt has not been done in any browser.
 
+
+## v1.0.0 production build (added on branch release/v1.0.0)
+Decided by Jeff: name Term Sherpa, version 1.0.0, GPL-3.0-only, the disclaimer text (first-run screen, bottom line of the explain window, store listing, privacy page), icon concept A, free-only publishing (Edge Add-ons and Firefox Add-ons desktop and Android; Chrome Web Store excluded), the privacy site in `site/` with `.github/workflows/pages.yml`.
+Still open for the owner (each is a separate go-ahead; none was done):
+- Make the repository public, enable GitHub Pages (Settings -> Pages -> GitHub Actions), create the GitHub release and tag `v1.0.0`, create the store accounts and submit. Steps: `docs/PUBLISHING.md`.
+- **Firefox-only DNS check** (permission `dns`): Chrome and Edge keep the static check only. Acceptable? Known limit: DNS rebinding between the check and the request is not covered.
+- **Cross-site iframes**: with `activeTab` alone, Firefox reads same-site frames only and says so for other sites; real Chrome behavior is unverified. Acceptable, or should the first click ask for the framed site up front?
+- **Article-vs-terms heuristic**: a page is not read as terms when its address looks like an encyclopedia/news/blog/dated-article path or its title is a long headline. A legitimate terms page under such an address would show as "linked documents" instead. Acceptable?
+- **Cookie banners**: a banner with no recognisable markup, no fixed position and no agree-style button is still missed; the real-site check is a snapshot (see `docs/BROWSER_TESTING.md`).
+- Firefox for Android on a real phone, the real toolbar click and permission prompt in Chrome/Edge, and store review are untested.
