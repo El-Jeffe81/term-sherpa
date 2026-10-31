@@ -1,7 +1,7 @@
 /*
  * launcher.js - the toolbar popup. Opening it IS the user's click (this is what grants activeTab for this tab).
  * It opens the Explain window and passes only the tab id. It reads nothing from the page and makes no network calls.
- * chrome.windows needs no permission. If a window cannot be created it falls back to a normal tab.
+ * chrome.windows needs no permission. If a window cannot be created (or the browser has no windows API) it falls back to a normal tab.
  */
 (function () {
   'use strict';
@@ -9,11 +9,13 @@
   var again = document.getElementById('again');
   var tabId = null;
 
-  function openExplain() {
+  // A small separate window where the browser has one; otherwise (Firefox for Android has no windows.create) a normal tab.
+  async function openExplain() {
     var url = chrome.runtime.getURL('explain/explain.html') + '?tab=' + encodeURIComponent(String(tabId));
-    return chrome.windows.create({ url: url, type: 'popup', width: 620, height: 820 }).catch(function () {
-      return chrome.tabs.create({ url: url });
-    });
+    if (chrome.windows && typeof chrome.windows.create === 'function') {
+      try { return await chrome.windows.create({ url: url, type: 'popup', width: 620, height: 820 }); } catch (e) { /* fall through to a tab */ }
+    }
+    return chrome.tabs.create({ url: url });
   }
 
   async function start() {

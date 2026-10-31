@@ -127,7 +127,7 @@ try {
   // (4) the page was read (activeTab was granted by the action); documents wait for the user's click
   const hitsBefore = tlsHits.length;
   await waitFor('permission step', async () => (await exec('return !document.getElementById("perm-go").closest("section").hidden')));
-  assert.match(await text('perm-text'), /Terms of Use|Terms/); assert.equal(tlsHits.length, hitsBefore, 'nothing is fetched before the user approves');
+  assert.match(await text('perm-text'), /Terms of Use|Terms/); assert.match(await text('perm-text'), /Your browser will ask you once/); assert.equal(tlsHits.length, hitsBefore, 'nothing is fetched before the user approves');
   const g1 = JSON.parse(await execAsync('return JSON.stringify(await chrome.permissions.getAll())'));
   assert.deepEqual(g1.origins || [], []);
   ok('news page read after the toolbar click (activeTab); the Agree dialog and its 4 links found; nothing fetched and no site access yet');

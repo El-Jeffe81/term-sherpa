@@ -277,7 +277,7 @@ try {
     assert.equal(pend.kind, 'permission'); assert.deepEqual(pend.docs, ['Terms', 'Privacy', 'Cookies', 'Community rules']);
     assert.deepEqual(pend.origins, ['https://docs.newsco.test/*']);
     assert.equal(pend.permHidden, false); assert.equal(pend.resultHidden, true);
-    assert.match(pend.perm, /Chrome will ask you once to allow access to that site/); assert.match(pend.btn, /Read these 4 documents/);
+    assert.match(pend.perm, /Your browser will ask you once to allow access to that site/); assert.match(pend.btn, /Read these 4 documents/);
     assert.match(pend.status, /agree dialog/); assert.match(pend.status, /will not click it/);
     assert.deepEqual(pend.granted, []); assert.equal(tlsHits.length, hitsBefore, 'nothing was fetched before the user approved the site');
     ok('real manifest: dialog found -> a "Read these 4 documents" button, no site access, zero requests to the document server until approved');
