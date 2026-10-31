@@ -12,3 +12,5 @@ Security options must be considered before anything is done.
 ## Current Phase
 
 Consumption only: go out and find, look at, and collect terms and conditions text into a dataset. Implementation and advising come later, as a separate discussion.
+
+Decision (2026-10-31): the dataset stays local, a file on each user's device. No central collection.

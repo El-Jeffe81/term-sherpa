@@ -1,0 +1,27 @@
+# Local datasets (collected terms text stays on each user's device; never committed)
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-*
+data/
+dataset/
+datasets/
+tc-collect/
+.local/
+
+# Secrets
+.env
+.env.*
+
+# Dependencies
+node_modules/
+
+# Test Chrome profiles
+tc-chrome-*/
+chrome-profile*/
+.chrome-profile/
+**/Default/Cache/
+
+# Archives
+*.zip
