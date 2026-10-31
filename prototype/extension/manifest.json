@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Terms Guide (working name)",
-  "version": "0.1.0",
-  "description": "Collects the terms, privacy, EULA and cookie pages you ask for, on this device only. Informational, not legal advice.",
+  "version": "0.2.0",
+  "description": "Explains the terms page you are on in plain English, on this device only, saving nothing by default. Not legal advice.",
   "action": {
-    "default_title": "Terms Guide: please help me",
-    "default_popup": "popup/popup.html"
+    "default_title": "Terms Guide: explain this page",
+    "default_popup": "explain/launcher.html"
   },
   "permissions": ["activeTab", "scripting"],
   "content_security_policy": {
