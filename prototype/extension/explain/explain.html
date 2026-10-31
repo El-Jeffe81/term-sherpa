@@ -45,6 +45,13 @@
     <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict.</p>
   </main>
 
+  <section id="frames" hidden>
+    <h2>Part of this page is in a frame I can't read</h2>
+    <p id="frames-text"></p>
+    <button id="frames-go" class="primary">Allow that site and look again</button>
+    <p class="muted">Your browser asks first. You can remove the access again under Options.</p>
+  </section>
+
   <section id="permission" hidden>
     <h2>Read the documents you are agreeing to</h2>
     <p id="perm-text"></p>
@@ -88,6 +95,7 @@
 
   <script src="../core/untrusted.js"></script>
   <script src="../core/netguard.js"></script>
+  <script src="../core/frames.js"></script>
   <script src="../core/dnsguard.js"></script>
   <script src="../core/extract.js"></script>
   <script src="../core/detect.js"></script>

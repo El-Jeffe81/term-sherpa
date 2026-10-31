@@ -54,7 +54,7 @@ try {
   const prefs = {
     'extensions.webextensions.uuids': JSON.stringify({ [ADDON_ID]: UUID }),
     'extensions.webextOptionalPermissionPrompts': false,
-    'network.dns.localDomains': 'docs.newsco.test',
+    'network.dns.localDomains': 'docs.newsco.test,cmp.newsco.test',
     'network.socket.forcePort': `443=${docsTls.port}`,
     'app.update.enabled': false, 'datareporting.policy.dataSubmissionEnabled': false, 'browser.shell.checkDefaultBrowser': false,
   };
@@ -211,8 +211,8 @@ try {
   const rd = await run([['https://docs.newsco.test/blocked-by-robots', 'Blocked Policy'], ['https://docs.newsco.test/moved-terms', 'Moved Terms'], ['https://docs.newsco.test/moved-offsite', 'Offsite Terms'], ['http://127.0.0.1:1/internal', 'Internal Policy']]);
   assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 4);
   assert.ok(rd.items.some((t) => /Blocked Policy/.test(t) && /robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /redirects are not followed/.test(t)), JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /redirects are not followed/.test(t)));
+  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t)), JSON.stringify(rd.items));
+  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /this link sends you to another page/.test(t)));
   assert.ok(rd.items.some((t) => /Internal Policy/.test(t) && /link not allowed/.test(t)));
   assert.deepEqual(tlsHits.slice(before2).map((h) => h.url).sort(), ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets never requested; loopback never requested');
   ok('Firefox guarded fetch: robots.txt disallow honoured, same-site and off-site redirects NOT followed (targets never requested), loopback/http link refused; the rest still read');
@@ -234,6 +234,36 @@ try {
     return JSON.stringify({ a: a.status, b: b.status, docs: docs.length, vers: vers.length, after: (await TCDB.listDocs()).length });`));
   assert.deepEqual(idb, { a: 'new', b: 'changed', docs: 1, vers: 2, after: 0 });
   ok('IndexedDB wrapper works in Firefox (versions, change detection, clear)');
+
+  // (9) agree banner inside an iframe, through the real toolbar click (activeTab only, no site access): same-site frame and a frame from another site.
+  // Firefox decides what activeTab covers; whichever it does, the window must either use the banner or say plainly that it could not read the frame.
+  const frameFlow = async (url) => {
+    const h0 = new Set(await handles());
+    await chromeExec('const t = gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); gBrowser.selectedTab = t; return 1', [url]);
+    const nh = await waitFor('new tab', async () => (await handles()).find((x) => !h0.has(x)));
+    await switchTo(nh);
+    await waitFor('frames page', async () => (await exec('return document.readyState')) === 'complete' && (await exec('return location.href')) === url);
+    const before = new Set(await handles());
+    await chromeAsync(`const node = CustomizableUI.getWidget(args[0]).forWindow(window).node; const btn = node.querySelector('.unified-extensions-item-action-button');
+      await window.gUnifiedExtensions.openPanel(null, 'extension_browser_action_popup');
+      btn.dispatchEvent(new window.CustomEvent('command', { bubbles: true, cancelable: true, detail: { openPopupWithoutUserInteraction: false } }));
+      return 1;`, ['term-sherpa_el-jeffe81_github_io-browser-action']);
+    const w = await waitFor('Explain window for frames page', async () => (await handles()).find((x) => !before.has(x)));
+    await switchTo(w);
+    await waitFor('Explain page ready', async () => (await exec('return location.href')).includes('/explain/explain.html?tab='));
+    await waitFor('frames result', async () => !/^Reading the page/.test(await text('status')) && (await text('status')).length > 0);
+    const out = JSON.parse(await exec(`return JSON.stringify({ status: document.getElementById('status').textContent, framesHidden: document.getElementById('frames').hidden, framesText: document.getElementById('frames-text').textContent,
+      permHidden: document.getElementById('permission').hidden })`));
+    return out;
+  };
+  const fSame = await frameFlow('https://docs.newsco.test/frames/same');
+  assert.match(fSame.status, /found the consent banner \(found inside a frame from docs\.newsco\.test\)/, JSON.stringify(fSame));
+  ok('Firefox, real toolbar click: a banner in a same-site iframe is found (activeTab covers same-site frames): ' + fSame.status.slice(0, 80));
+  const fCross = await frameFlow('https://docs.newsco.test/frames/cross');
+  const usedFrame = /found the consent banner \(found inside a frame from cmp\.newsco\.test\)/.test(fCross.status);
+  const saidUnreadable = !fCross.framesHidden && /frame from another site, and I am not allowed to read inside it/.test(fCross.framesText) && /cmp\.newsco\.test/.test(fCross.framesText);
+  assert.ok(usedFrame || saidUnreadable, 'cross-origin frame: either read, or plainly reported - got ' + JSON.stringify(fCross));
+  ok('Firefox, real toolbar click: a banner in a frame from ANOTHER site is ' + (usedFrame ? 'read (activeTab reached the frame)' : 'reported plainly as unreadable, with the allow-that-site button'));
 } catch (e) {
   console.error('FIREFOX E2E FAILED:', e.message);
   console.error(gdLog.split('\n').filter((l) => /error|exception/i.test(l)).slice(-8).join('\n'));

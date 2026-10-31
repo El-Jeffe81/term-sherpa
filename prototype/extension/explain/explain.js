@@ -67,15 +67,25 @@
   }
 
   /* ---------- reading the page (only after the user's click on the icon) ---------- */
-  async function runOnPage(tab, options) {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: function (o) { globalThis.__tcOptions = o; }, args: [options] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: INJECT_FILES });
-    var out = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+  // Three injections, into the top frame only or into every frame the browser lets us into (allFrames). Frames of another site are
+  // included only once the person has allowed that site; the ones we cannot enter are reported by TCFrames, not guessed at.
+  // Only the top frame gets the "user picked this page" option: a frame is never read as a picked page.
+  async function inject(target, options) {
+    await chrome.scripting.executeScript({ target: target, func: function (o) { globalThis.__tcOptions = (window.top === window) ? o : {}; }, args: [options] });
+    await chrome.scripting.executeScript({ target: target, files: INJECT_FILES });
+    return chrome.scripting.executeScript({
+      target: target,
       func: function () { var r = globalThis.__tcResult; delete globalThis.__tcResult; return r; }
     });
-    var res = out && out[0] && out[0].result;
+  }
+  async function runOnPage(tab, options) {
+    var out;
+    try { out = await inject({ tabId: tab.id, allFrames: true }, options); }
+    catch (e) { out = await inject({ tabId: tab.id }, options); } // frames not allowed at all: the top page still works
+    var combined = TCFrames.combine((out || []).map(function (r) { return { frameId: r.frameId, result: r.result }; }));
+    var res = combined.res;
     if (!res || !res.ok) throw new Error((res && res.error) || 'The page could not be read.');
+    res.frameInfo = { from: combined.fromFrame, unreadable: combined.unreadable };
     return res;
   }
 
@@ -139,6 +149,24 @@
 
   function variantNote(d) { return d.variants ? '(' + d.variants + ' other regional or language version' + (d.variants === 1 ? '' : 's') + ' of this page not shown)' : ''; }
 
+  // What to tell a person about a document that could not be read, in plain words, and what to do next.
+  function unreadAdvice(it) {
+    if (it.redirect) {
+      var th = it.target ? hostOf(it.target) : '';
+      return 'This link sends you to another page' + (th ? ' (on ' + th + ')' : '') + '. Open it and run Term Sherpa there.';
+    }
+    if (it.needs_js) return 'This page only shows its text after it runs JavaScript, so I cannot read it from here. Open it, then click Term Sherpa there and I will explain what is on the screen.';
+    return '';
+  }
+  function unreadSummary(results) {
+    var bad = results.filter(function (r) { return !r.ok; });
+    var redirects = bad.filter(function (r) { return r.redirect; }).length, js = bad.filter(function (r) { return r.needs_js; }).length;
+    if (bad.length && redirects === bad.length) return bad.length === 1 ? 'This link sends you to another page. Open it and run Term Sherpa there.' : 'These links send you to other pages. Open one and run Term Sherpa there.';
+    if (bad.length && js === bad.length) return bad.length === 1 ? 'This page only shows its text after it runs JavaScript, so I cannot read it from here. Open it, then click Term Sherpa there and I will explain what is on the screen.' : 'These pages only show their text after they run JavaScript, so I cannot read them from here. Open one, then click Term Sherpa there.';
+    if (redirects || js) return 'I could not read ' + (results.length > 1 ? 'any of the ' + results.length + ' documents' : 'this document') + ' from here. Some send you to another page or need JavaScript: open them from the list below and run Term Sherpa there.';
+    return 'I could not read any of the ' + results.length + ' documents (see below). Open them from the list.';
+  }
+
   // Which documents were read, which were not and why. Collapsed. Links are opened by the user, never followed here.
   function renderDocuments(items) {
     var box = $('docs-read'), list = $('docs-list'); clear(list);
@@ -146,10 +174,12 @@
       var li = el('li');
       li.appendChild(el('span', it.label || 'Document', 'badge'));
       li.appendChild(el('span', it.ok ? 'read' : 'not read: ' + it.reason, it.ok ? 'muted' : 'muted warn'));
+      if (!it.ok && unreadAdvice(it)) li.appendChild(el('div', unreadAdvice(it), 'muted'));
       if (variantNote(it)) li.appendChild(el('div', variantNote(it), 'muted'));
       li.appendChild(el('div', it.url, 'url'));
-      var b = el('button', 'Open this page');
-      b.addEventListener('click', function () { addPick(it.url, it.doc_type); chrome.tabs.create({ url: it.url }); });
+      var go = it.target || it.url, goHost = it.target ? hostOf(it.target) : '';
+      var b = el('button', goHost ? 'Open ' + goHost : 'Open this page');
+      b.addEventListener('click', function () { addPick(go, it.doc_type); chrome.tabs.create({ url: go }); });
       li.appendChild(b);
       list.appendChild(li);
     });
@@ -241,7 +271,7 @@
     var unread = results.filter(function (r) { return !r.ok; }).concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }));
     renderDocuments(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); })));
     if (!read.length) {
-      setStatus('I could not read any of the ' + (results.length + prep.rejected.length) + ' documents (see below). Open them from the list.', true);
+      setStatus(unreadSummary(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }))), true);
       showCandidates(links, ctx);
       return { kind: 'unreadable', unread: unread.map(function (u) { return u.label + ': ' + u.reason; }) };
     }
@@ -261,14 +291,32 @@
     return { kind: 'documents', analysis: analysis, read: read.length, unread: unread.length };
   }
 
+  var THIN_MSG = 'This looks like a terms or privacy page, but I can see very little text on it. It may still be loading, or its text may only appear after a click. Wait for it to finish, open any "read more" parts, then click Term Sherpa again.';
+
+  // Frames: the agree box or terms may sit in an iframe. Say where it came from, and what to do about frames that could not be read.
+  var frameAsk = null;
+  function frameNote(res) {
+    var fi = res.frameInfo || {};
+    var box = $('frames'); box.hidden = true; frameAsk = null;
+    if (fi.unreadable && fi.unreadable.length) {
+      var hosts = fi.unreadable.map(function (u) { return u.host; }).join(', ');
+      frameAsk = TCFrames.originPatterns(fi.unreadable);
+      $('frames-text').textContent = 'Part of this page (' + hosts + ') is a frame from another site, and I am not allowed to read inside it. If the agree box or the terms are in there, allow that site and I will look again. Or open the terms link yourself and run Term Sherpa on that page.';
+      $('frames-go').hidden = !frameAsk.length;
+      box.hidden = false;
+    }
+  }
+  function frameFrom(fi) { return fi && fi.from ? ' (found inside a frame from ' + fi.from.host + ')' : ''; }
+
   /* Turn the injected script's result into what the window shows. Exposed (TCExplainUI.show) so the headless e2e can check the rendering. */
   async function show(res) {
     ['result', 'candidates', 'paste', 'permission', 'docs-read'].forEach(function (id) { $(id).hidden = true; });
     var page = res.page || {};
+    $('frames').hidden = true; frameAsk = null;
     var host = hostOf(page.url || (res.extracted && res.extracted.url) || '');
     if (page.is_pdf) { setStatus('This is a PDF, and I cannot read PDFs yet (it needs the pdftotext helper, pending approval).'); return { kind: 'pdf' }; }
     if (res.extracted) {
-      if (res.extracted.text.length < 200) { setStatus('This looks like a terms page, but I could only read a little text. Try again once the page has finished loading.', true); return { kind: 'short' }; }
+      if (res.extracted.text.length < 200) { setStatus(THIN_MSG, true); return { kind: 'short' }; }
       var analysis = TCAnalyze.analyze(res.extracted.text, { doc_type: res.extracted.doc_type, title: res.extracted.title, host: hostOf(res.extracted.url) });
       renderAnalysis(analysis);
       var msg = 'Done. Nothing was saved.';
@@ -284,18 +332,24 @@
     if (cons.found && cons.links.length && !page.is_hub) {
       var via = cons.kind === 'banner' ? 'banner' : cons.kind === 'inline' ? 'inline' : 'dialog';
       var what = via === 'banner' ? 'the consent banner' : via === 'inline' ? 'the agree prompt' : 'the agree dialog';
-      var intro = 'I found ' + what + (cons.buttons.length ? ' (button: "' + cons.buttons[0] + '")' : '') + ' on this page. I will not click it. Allow access below and I will read the ' + cons.links.length + ' document link(s) it mentions.';
+      var intro = 'I found ' + what + frameFrom(res.frameInfo) + (cons.buttons.length ? ' (button: "' + cons.buttons[0] + '")' : '') + ' on this page. I will not click it. Allow access below and I will read the ' + cons.links.length + ' document link(s) it mentions.';
       return explainLinks(cons.links, { host: host, via: via, gesture: false, intro: intro });
     }
+    frameNote(res); // nothing found so far: if a frame we could not read might hold it, say so
     if (page.sensitive) {
       setStatus('This looks like an account, checkout or payment page, so I did not read it. ' + (res.links.length ? 'Legal links found here are listed below.' : 'Open the site\'s terms page and try there.'));
       showCandidates(res.links, { host: host });
       return { kind: 'sensitive' };
     }
     var n = TCLinkGroup.dedupe(res.links, { lang: userLang() }).docs.length;
+    if (page.thin && !page.is_hub) {
+      setStatus(THIN_MSG, true);
+      showCandidates(res.links, { host: host });
+      return { kind: 'short' };
+    }
     setStatus(page.is_hub ? 'This is a legal hub. Pick a document below to explain it.'
       : n ? 'This page is not a terms page, but I found ' + n + ' legal document' + (n === 1 ? '' : 's') + ' linked from it. Pick one below.'
-      : 'I did not find terms or privacy links on this page.');
+      : 'I did not find terms or privacy links on this page.' + (frameAsk ? ' Part of the page is in a frame I could not read (see below).' : ''));
     showCandidates(res.links, { host: host });
     return { kind: 'links' };
   }
@@ -328,6 +382,14 @@
     $('welcome-go').focus();
   }
   $('welcome-go').addEventListener('click', async function () { await markWelcomeSeen(); showApp(true); run(); });
+
+  $('frames-go').addEventListener('click', async function () {
+    if (!frameAsk || !frameAsk.length) return;
+    var ok = await requestAccess(frameAsk);
+    if (!ok) return setStatus('Access was not allowed, so I did not look inside the frame.', true);
+    setStatus('Looking again...');
+    run();
+  });
 
   $('perm-go').addEventListener('click', function () { if (pending) explainLinks(pending.links, Object.assign({}, pending.ctx, { gesture: true })); });
 

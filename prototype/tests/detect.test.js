@@ -74,3 +74,13 @@ test('fixture: page with no legal links yields an empty list (popup then asks fo
   const tree = parseHtml(read('nolinks/index.html'));
   assert.deepEqual(D.findLegalLinks(E.collectLinks(tree), 'https://plain.test/'), []);
 });
+
+test('classifyPage: a page that looks like terms but has almost no text is flagged "thin" (JavaScript-built or still loading), not read as terms', () => {
+  const a = D.classifyPage({ url: 'https://a.test/terms', title: 'Terms', h1: '', textLength: 80 });
+  assert.equal(a.isTerms, false); assert.equal(a.thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/privacy-policy', title: '', h1: '', textLength: 400 }).thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/page', title: 'Privacy Policy | A', h1: '', textLength: 120 }).thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/terms', title: '', h1: '', textLength: 900 }).thin, false, 'enough text: read as terms');
+  assert.equal(D.classifyPage({ url: 'https://a.test/about', title: 'About us', h1: '', textLength: 50 }).thin, false, 'an ordinary short page is not "thin terms"');
+  assert.equal(D.classifyPage({ url: 'https://a.test/account/billing', title: 'Terms', h1: '', textLength: 50 }).thin, false, 'sensitive pages are never flagged');
+});

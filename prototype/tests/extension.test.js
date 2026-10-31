@@ -109,11 +109,15 @@ test('explain: the toolbar popup is the launcher; it opens a window with chrome.
 
 test('explain: the page is read in one place only (runOnPage, started from run() when the window opens)', () => {
   const js = explainSrc();
-  assert.equal((js.match(/executeScript/g) || []).length, 3);
-  const body = /async function runOnPage[\s\S]*?\n  }\n/.exec(js)[0];
+  assert.equal((js.match(/executeScript/g) || []).length, 3, 'three injections, all inside inject()');
+  const body = /async function inject[\s\S]*?\n  }\n/.exec(js)[0];
   assert.equal((body.match(/executeScript/g) || []).length, 3);
+  const run1 = /async function runOnPage[\s\S]*?\n  }\n/.exec(js)[0];
+  assert.match(run1, /allFrames: true/, 'tries every frame the browser allows first');
+  assert.match(run1, /catch \(e\) \{ out = await inject\(\{ tabId: tab\.id \}/, 'and falls back to the top frame alone');
+  assert.match(body, /window\.top === window\) \? o : \{\}/, 'a frame is never given the picked-page option');
   assert.equal([...js.matchAll(/runOnPage\(/g)].length, 2, 'definition + one caller (run)');
-  assert.equal([...js.matchAll(/\brun\(\)/g)].length, 3, 'definition + the two ways the window starts (start(), and Continue on the welcome screen)');
+  assert.equal([...js.matchAll(/\brun\(\)/g)].length, 4, 'definition + start(), Continue on the welcome screen, and look-again after the person allows a frame\'s site');
   assert.ok(!/chrome\.(history|cookies|webRequest|downloads|identity)/.test(js));
   const store = [...js.matchAll(/chrome\.storage\.\w+\.\w+/g)].map((m) => m[0]);
   assert.deepEqual(store, ['chrome.storage.local.get', 'chrome.storage.local.set'], 'chrome.storage.local only (never sync), only get/set of the welcome marker');
@@ -207,4 +211,11 @@ test('every extension page header uses the extension icon, and the icon files ex
     assert.equal(b.readUInt32BE(16), s); assert.equal(b.readUInt32BE(20), s); // PNG IHDR width/height
   }
   for (const f of ['icon.svg', 'icon-48.svg', 'icon-small.svg']) assert.match(fs.readFileSync(path.join(EXT, 'icons', f), 'utf8'), /^<svg /);
+});
+
+test('explain: "Nothing found doesn\'t mean there\'s no risk." is shown exactly when no risk or "also" finding was found', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'extension', 'explain', 'explain.html'), 'utf8');
+  assert.match(html, /<p id="nothing-found"[^>]*\bhidden\b[^>]*>Nothing found doesn't mean there's no risk\.<\/p>/, 'hidden by default, exact wording');
+  const js = explainSrc();
+  assert.match(js, /\$\('nothing-found'\)\.hidden = risk\.length !== 0 \|\| also\.length !== 0;/);
 });

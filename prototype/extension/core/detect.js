@@ -112,6 +112,7 @@
 
   var MIN_TEXT_FOR_PATH_MATCH = 500;
   var MIN_TEXT_FOR_TITLE_MATCH = 1500;
+  var THIN_TITLE_TEXT = 300;
 
   function pathOf(u) { try { return new URL(u).pathname.replace(/\/+$/, '').toLowerCase() || '/'; } catch (e) { return ''; } }
 
@@ -249,16 +250,19 @@
     }
     var len = info.textLength || 0;
     var sensitive = isSensitivePage(info.url);
-    if (sensitive) return { isTerms: false, isHub: false, sensitive: true, doc_type: null, reasons: ['sensitive-looking page (account, checkout, payment...): never read as a document'] };
-    if (info.links && isLegalHub(info, info.links)) return { isTerms: false, isHub: true, sensitive: sensitive, doc_type: null, reasons: ['legal hub: lists ' + info.links.length + ' legal documents'] };
+    if (sensitive) return { isTerms: false, isHub: false, thin: false, sensitive: true, doc_type: null, reasons: ['sensitive-looking page (account, checkout, payment...): never read as a document'] };
+    if (info.links && isLegalHub(info, info.links)) return { isTerms: false, isHub: true, thin: false, sensitive: sensitive, doc_type: null, reasons: ['legal hub: lists ' + info.links.length + ' legal documents'] };
     if (byPath && len >= MIN_TEXT_FOR_PATH_MATCH) {
       reasons.push('url path');
-      return { isTerms: true, isHub: false, sensitive: sensitive, doc_type: byTitle && byTitle !== byPath && byPath === 'other' ? byTitle : byPath, reasons: reasons.concat(byTitle ? ['title'] : []) };
+      return { isTerms: true, isHub: false, thin: false, sensitive: sensitive, doc_type: byTitle && byTitle !== byPath && byPath === 'other' ? byTitle : byPath, reasons: reasons.concat(byTitle ? ['title'] : []) };
     }
     if (byTitle && len >= MIN_TEXT_FOR_TITLE_MATCH) {
-      return { isTerms: true, isHub: false, sensitive: sensitive, doc_type: byTitle, reasons: ['title/heading'] };
+      return { isTerms: true, isHub: false, thin: false, sensitive: sensitive, doc_type: byTitle, reasons: ['title/heading'] };
     }
-    return { isTerms: false, isHub: false, sensitive: sensitive, doc_type: null, reasons: [] };
+    // The address or title says "terms"/"privacy" but there is hardly any text: the page probably builds its text with JavaScript
+    // (or it is still loading, or the text is behind a button). Not read as terms, but the window can say so plainly.
+    var thin = !!((byPath && len < MIN_TEXT_FOR_PATH_MATCH) || (byTitle && len < THIN_TITLE_TEXT));
+    return { isTerms: false, isHub: false, sensitive: sensitive, thin: thin, doc_type: null, reasons: thin ? ['looks like a legal page but has very little text'] : [] };
   }
 
   return {
