@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Terms Guide (working name)",
-  "version": "0.2.0",
-  "description": "Explains the terms page you are on in plain English, on this device only, saving nothing by default. Not legal advice.",
+  "version": "0.3.0",
+  "description": "Explains the terms, privacy policy or 'I agree' dialog you are on in plain English, on this device. Nothing saved by default.",
   "action": {
     "default_title": "Terms Guide: explain this page",
     "default_popup": "explain/launcher.html"
   },
   "permissions": ["activeTab", "scripting"],
+  "optional_host_permissions": ["https://*/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }

@@ -14,11 +14,14 @@ test('manifest is valid MV3 and follows the hard rules', () => {
   assert.deepEqual(validate(), []);
 });
 
-test('manifest has no content_scripts and only activeTab + scripting', () => {
+test('manifest has no content_scripts, no up-front host access, only activeTab + scripting, and ONE optional https host permission', () => {
   const m = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
   assert.equal(m.content_scripts, undefined);
-  assert.equal(m.host_permissions, undefined);
+  assert.equal(m.host_permissions, undefined, 'nothing is readable until the user approves a site in Chrome\'s prompt');
   assert.deepEqual([...m.permissions].sort(), ['activeTab', 'scripting']);
+  assert.deepEqual(m.optional_host_permissions, ['https://*/*'], 'optional, https only');
+  assert.equal(m.optional_permissions, undefined);
+  assert.equal(m.background, undefined);
 });
 
 test('the page is only touched inside click handlers (executeScript appears only in runOnPage, called from click handlers)', () => {
@@ -37,13 +40,28 @@ test('the page is only touched inside click handlers (executeScript appears only
 });
 
 test('privacy lint: the extension contains no network calls, tracking, remote code or beacons', () => {
+  // The single exception is core/docfetch.js (reads the documents an agree dialog links to; see tests/docfetch.test.js),
+  // which receives `fetch` by injection from explain.js. No other file may call fetch.
   const banned = [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /WebSocket/, /EventSource/, /\bimport\s*\(/, /importScripts/, /\beval\s*\(/, /new Function/,
     /google-analytics|googletagmanager|gtag\(|mixpanel|segment\.(io|com)|sentry|amplitude|hotjar|plausible/i, /document\.cookie/, /\.innerHTML\s*=/, /chrome\.cookies|chrome\.history|chrome\.webRequest|chrome\.identity|chrome\.downloads/];
   for (const f of walk(EXT).filter((x) => /\.(js|html|json|css)$/.test(x))) {
     const src = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    for (const re of banned) assert.ok(!re.test(src), `${path.relative(ROOT, f)} matches ${re}`);
+    const isDocFetch = path.relative(EXT, f) === path.join('core', 'docfetch.js');
+    for (const re of banned) if (!(isDocFetch && re.source === '\\bfetch\\s*\\(')) assert.ok(!re.test(src), `${path.relative(ROOT, f)} matches ${re}`);
     if (f.endsWith('.html')) assert.ok(!/(src|href)="https?:/i.test(src), f + ' loads a remote resource');
   }
+});
+
+test('privacy lint: fetch is reachable from exactly one place - explain.js hands window.fetch to docfetch.js, after the click', () => {
+  const users = walk(EXT).filter((x) => /\.js$/.test(x)).filter((f) => /\bfetch\b/.test(stripComments(fs.readFileSync(f, 'utf8'))));
+  assert.deepEqual(users.map((f) => path.relative(EXT, f)).sort(), [path.join('core', 'docfetch.js'), path.join('explain', 'explain.js')]);
+  const js = explainSrc();
+  assert.equal([...js.matchAll(/\bfetch\b/g)].length, 2, 'only the dependency hand-over { fetch: window.fetch.bind(window) } and its definition');
+  assert.match(js, /fetch: window\.fetch\.bind\(window\)/);
+  assert.equal([...js.matchAll(/TCDocFetch\.fetchAll\(/g)].length, 1, 'documents are fetched in exactly one place (explainLinks)');
+  assert.equal([...js.matchAll(/explainLinks\(/g)].length >= 3, true);
+  // explainLinks is only reached from run()'s show(), the Explain buttons and the permission button: all after a user click / the window opened by one
+  assert.ok(!/DOMParser/.test(js), 'HTML parsing lives in domparse.js');
 });
 
 test('extension code is dependency-free and package.json declares no third-party dependencies', () => {
@@ -135,6 +153,16 @@ test('explain: Explain window loads the engine scripts in dependency order from 
   assert.ok(at('../core/quote.js') > -1 && at('../core/rules.js') > -1 && at('../core/analyze.js') > -1 && at('explain.js') > -1);
   assert.ok(at('../core/rules.js') < at('../core/analyze.js') && at('../core/quote.js') < at('../core/analyze.js') && at('../core/analyze.js') < at('explain.js'));
   assert.ok(at('../core/context.js') > -1 && at('../core/context.js') < at('../core/analyze.js'), 'context.js is loaded before analyze.js');
+  for (const f of ['../core/extract.js', '../core/detect.js', '../core/linkgroup.js', '../core/docfetch.js', 'domparse.js']) assert.ok(at(f) > -1 && at(f) < at('explain.js'), f);
+});
+
+test('explain: DOMParser is used only in explain/domparse.js (detached, inert parse; nothing is attached to the page)', () => {
+  for (const f of walk(EXT).filter((x) => /\.js$/.test(x))) {
+    const src = stripComments(fs.readFileSync(f, 'utf8'));
+    if (/DOMParser/.test(src)) assert.equal(path.relative(EXT, f), path.join('explain', 'domparse.js'));
+  }
+  const src = stripComments(fs.readFileSync(path.join(EXT, 'explain', 'domparse.js'), 'utf8'));
+  assert.ok(!/appendChild|insertBefore|replaceChild|document\.body|document\.write|importNode|adoptNode|innerHTML|\.src\s*=|eval\(/.test(src));
 });
 
 test('explain: concise window - exact wording sits in a collapsed <details>, and the filler is gone from the page', () => {

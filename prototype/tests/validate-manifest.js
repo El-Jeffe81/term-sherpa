@@ -19,7 +19,8 @@ function validate() {
   // hard rules
   ok(!('content_scripts' in m), 'RULE: no manifest content_scripts (inject only on click)');
   ok(!('host_permissions' in m), 'RULE: no host_permissions');
-  ok(!('optional_host_permissions' in m), 'RULE: no optional_host_permissions (extension makes no network requests)');
+  // The ONLY host access is optional, https-only, and requested at click time for just the needed site (chrome.permissions.request).
+  ok(JSON.stringify(m.optional_host_permissions || []) === JSON.stringify(['https://*/*']), 'RULE: optional_host_permissions must be exactly ["https://*/*"] (requested per site at click time, never granted up front)');
   ok(!('background' in m), 'no background/service worker needed');
   ok(!('web_accessible_resources' in m), 'no web_accessible_resources');
   ok(!('externally_connectable' in m), 'no externally_connectable');
@@ -63,5 +64,5 @@ module.exports = { validate };
 if (require.main === module) {
   const errs = validate();
   if (errs.length) { console.error('MANIFEST INVALID:\n- ' + errs.join('\n- ')); process.exit(1); }
-  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no host permissions)');
+  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)');
 }
