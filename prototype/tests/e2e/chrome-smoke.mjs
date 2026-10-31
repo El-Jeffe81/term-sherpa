@@ -46,7 +46,7 @@ const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MA
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chrome-'));
 // Pipe transport: Extensions.loadUnpacked is only available with --remote-debugging-pipe + --enable-unsafe-extension-debugging
 // (branded Chrome ignores --load-extension). This flag is for this throw-away test profile only.
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+const chrome = spawn(CHROME, [...(process.env.TC_HEADFUL ? [] : ['--headless=new']), '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', ...tlsFlags, `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let stderr = ''; chrome.stderr.on('data', (d) => { stderr += d; });
 const site = await startSite({ routes: {
@@ -65,9 +65,24 @@ function onMessage(d) {
   if (d.id && pending.has(d.id)) { const p = pending.get(d.id); pending.delete(d.id); d.error ? p.j(new Error(JSON.stringify(d.error))) : p.r(d.result); }
   else if (d.method === 'Runtime.exceptionThrown') exceptions.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text);
 }
-const send = (method, params = {}, sessionId) => new Promise((r, j) => { const i = ++id; pending.set(i, { r, j }); chrome.stdio[3].write(JSON.stringify({ id: i, method, params, sessionId }) + '\0'); });
+const send = (method, params = {}, sessionId) => new Promise((r, j) => { const i = ++id; if (process.env.TC_TRACE) console.error('->', method, JSON.stringify(params).slice(0, 120)); pending.set(i, { r, j }); chrome.stdio[3].write(JSON.stringify({ id: i, method, params, sessionId }) + '\0'); });
+// Vivaldi's tabs live in its own UI (a web app), so Target.createTarget makes a tab that never loads. For such browsers (auto-detected,
+// or TC_OPEN_VIA_OPENER=1) a new tab is opened with window.open() from the browser's own first tab instead; everything after that is identical.
+const VIA_OPENER = !!process.env.TC_OPEN_VIA_OPENER || /vivaldi/i.test(CHROME);
+let opener = null; let openerReady = false;
+async function createTab() {
+  if (!VIA_OPENER) return (await send('Target.createTarget', { url: 'about:blank' })).targetId;
+  const pages = async () => (await send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page');
+  if (!openerReady) { openerReady = true; await new Promise((r) => setTimeout(r, 5000)); } // let the browser's own UI finish starting before touching its first tab
+  for (let i = 0; i < 100 && !opener; i++) { const p = (await pages()).find((t) => /^chrome-extension:/.test(t.url)); if (p) opener = (await send('Target.attachToTarget', { targetId: p.targetId, flatten: true })).sessionId; else await new Promise((r) => setTimeout(r, 200)); }
+  if (!opener) throw new Error('no first tab to open new tabs from');
+  const known = new Set((await pages()).map((t) => t.targetId));
+  await send('Runtime.evaluate', { expression: `window.open(${JSON.stringify(site.base + '/terms')}); 1`, userGesture: true }, opener);
+  for (let i = 0; i < 100; i++) { const n = (await pages()).find((t) => !known.has(t.targetId)); if (n) return n.targetId; await new Promise((r) => setTimeout(r, 100)); }
+  throw new Error('window.open did not create a tab');
+}
 async function openTab(url) {
-  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  const targetId = await createTab();
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
   await send('Runtime.enable', {}, sessionId); await send('Page.enable', {}, sessionId);
   await send('Page.navigate', { url }, sessionId);
@@ -433,6 +448,6 @@ try {
   const nav = await popup.ev('JSON.stringify(performance.getEntriesByType("resource").map(r=>r.name).filter(n=>!n.startsWith("chrome-extension://")))');
   assert.equal(nav, '[]'); ok('popup made no non-extension network requests');
   assert.deepEqual(exceptions.filter((e) => !/127\.0\.0\.1/.test(e || '')), []); ok('no uncaught exceptions from extension code (the fixture page script error is ignored)');
-  console.log(`\nChrome e2e: ${results.length} checks passed (${(await send('Browser.getVersion')).product})`);
+  console.log(`\nChrome e2e: ${results.length} checks passed (${(await send('Browser.getVersion')).product}; binary: ${path.basename(CHROME)})`);
   await cleanup();
 } catch (e) { console.error('E2E FAILED:', e.message); if (process.env.DEBUG) console.error(stderr); console.error(stderr.split('\n').filter((l) => /extension|manifest/i.test(l)).slice(-5).join('\n')); await cleanup(); process.exit(1); }
