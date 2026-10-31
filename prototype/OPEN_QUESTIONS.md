@@ -30,3 +30,10 @@
 ## Decided
 - 2026-10-31: Jeff decided the dataset stays local, a file on each user's device with no central collection.
 - 2026-10-31: Jeff approved the security plan: save only the terms document (never the page the user is on), CLI refuses non-public targets at every hop, terms text is untrusted data with exact-quote verification. Implemented; see docs/SECURITY.md.
+
+## Explain phase: open decisions (added on branch wip/terms-explain)
+- **"Track what I've agreed to"**: parked, not built. It would store personal data (what, when, which version). Do you want it, and where would it live?
+- **Chrome built-in on-device AI (Prompt API)**: parked, not used. Do you approve trying it later as an optional extra?
+- **Legacy collection popup**: kept as an opt-in "Save copies" path and an advanced view. Keep, or retire it?
+- **Working name**: "Terms Guide" is still a placeholder.
+- **Rule wording and severity**: needs your review, and a lawyer's review of the plain-English explanations before wide release.

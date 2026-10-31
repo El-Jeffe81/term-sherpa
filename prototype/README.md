@@ -1,16 +1,19 @@
 # tc-prototype: local proof of concept for a free "terms guide" (working name, not decided)
 
-Phase: **consumption only**. It finds, looks at and collects terms / privacy / EULA / cookie text into a
-**local** dataset. No AI summaries, no advice, no model. Values: privacy first, protect humans, help humans.
-Informational tooling only, not legal advice.
+Phase: **Explain** (built on the consumption phase). Click the extension on a terms page and a window explains it in plain
+English: an overview, key risks ranked High / Medium / Low with the exact quoted sentence, and a short "What you're agreeing
+to" list. The analysis is **on-device fixed rules, not AI**: no model, no network, nothing sent anywhere, and **nothing is
+saved by default**. The older collection code (local dataset) is still there, off unless you opt in.
+Values: privacy first, protect humans, help humans. Informational tooling only, **not legal advice**.
 
 Everything here is local to this box/device. Nothing was pushed, sent or published. There is no GitHub repo involved.
 
 ## What is in the box
 | Path | What |
 |------|------|
-| `extension/` | Chrome MV3 extension (popup with a **Please help me** button) |
-| `extension/core/` | Shared pure code: text extractor, link/page detector, hashing + versioning + diff |
+| `extension/` | Chrome MV3 extension (toolbar click -> launcher -> **Explain window**; the old collection popup is kept as the advanced view) |
+| `extension/core/` | Shared pure code: text extractor, link/page detector, hashing + versioning + diff, **rules.js + analyze.js (Explain rule engine)** |
+| `extension/explain/` | Launcher popup and the Explain window |
 | `cli/` | `tc-collect <url>` Node CLI (robots-aware, logged-out, rate-limited, SQLite) |
 | `tests/` | Offline tests (node:test) + HTML fixtures for fake sites (`tests/fixtures/sites`) + optional Chrome e2e |
 | `docs/SECURITY.md` | Local-only data, what is saved, SSRF guard, untrusted text, prompt-injection note for model phases |
@@ -23,19 +26,33 @@ Chrome is only needed to use the extension, and for the optional e2e.
 ## Run the tests
 ```
 cd /workspace/tc-prototype
-npm test                 # offline unit + CLI + security + quality + extension-lint tests, no network beyond 127.0.0.1 (85 tests)
+npm test                 # offline unit + CLI + security + quality + rule-engine + extension-lint tests, no network beyond 127.0.0.1 (130 tests)
 npm run validate         # manifest validation
-npm run test:e2e         # OPTIONAL: real headless Chrome (13 checks); skips itself if Chrome is not installed
+npm run test:e2e         # OPTIONAL: real headless Chrome (19 checks); skips itself if Chrome is not installed
 ```
 The tests only talk to a local fixture server on 127.0.0.1 serving invented sites ("Acme Example", `*.test` addresses).
 No real site is scraped in tests.
 
 ## Load the extension (unpacked)
 1. Open `chrome://extensions`, switch on **Developer mode**.
-2. **Load unpacked** and pick the `extension/` folder.
-3. Go to a page with a signup form or a footer with terms links, click the extension icon, then **Please help me**.
+2. **Load unpacked** and pick the `extension/` folder (after pulling new code, press the reload button on the extension card).
+3. Open a terms page (or a page whose footer links to terms), click the extension icon. A window opens and explains the page.
 
-What it does on click, and only on click:
+## Explain: what you see and how it works
+Click the icon on a terms page. The window shows, top to bottom:
+1. A notice: **Informational, not legal advice**.
+2. **Overview in plain English**: word count and read time, what the service is, what you have to do (sentences copied from the document).
+3. **Key risks, highest first**: each card has a High / Medium / Low label, a plain-English explanation and the exact sentence from the page (checked word for word; anything that cannot be verified is dropped). Very long sentences are shown in exact pieces, marked "Shortened".
+4. **What you're agreeing to**: one short line per topic found.
+5. If the page is not a terms page, it lists the terms links it found. Pick one, open it, click the icon again. Nothing is analysed until then.
+
+The 12 topics checked: forced arbitration, class-action waiver, jury trial waiver, data sold or shared, auto-renewal / recurring billing, the company changing the terms on its own, license to your content, liability limits and disclaimers, termination at will, governing law and venue, age requirements, tracking and cookies. The rules are in `extension/core/rules.js`; the engine is `extension/core/analyze.js`.
+
+Storage: **nothing is saved by default**. Options in the window has a "Save copies" checkbox that switches the older collection path back on (IndexedDB, versions, diff, export; manage it from the "saved copies" link). Without it, nothing is written when you click.
+
+Not built (parked until Jeff decides): tracking what you have agreed to, and using Chrome's built-in on-device AI.
+
+Older collection behaviour (still in the code; used only if you turn on "Save copies", or open the advanced popup). It does this on click, and only on click:
 - Injects a detector into the current tab with `chrome.scripting.executeScript` (permission `activeTab`; there is no
   `content_scripts` entry in the manifest, and no host permissions).
 - It lists terms / privacy / EULA / cookie links it finds (by link text, URL patterns and common paths such as
@@ -92,8 +109,10 @@ CLI behaviour:
 - The user can export and delete everything from the popup.
 - Records carry `private_only = true`. Sharing or redistribution is blocked on a lawyer review (OPEN_QUESTIONS.md).
 - No model is bundled or downloaded. No third-party runtime dependency (PARTNERS.md).
+- Explain: the page is read on click with `activeTab`; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
 
 ## Known limitations (honest list)
+- Explain rules are sentence-level patterns: they can miss unusual wording or misread a sentence, and "nothing found" does not mean a term is absent. Severity is a rough guide. English only. Wording and severity have not had a lawyer's review. This is not legal advice.
 - Built-in extractor (heuristic, no Readability). It reads collapsed text that is in the DOM, but text a page only loads when you click (lazy-loaded via JS) is not captured. PDFs are detected but not read (needs the pdftotext partner). Chrome only. Link patterns cover English, Spanish, French, German, Portuguese and Italian only; the language guess for stored text uses stop words and says "unknown" for short text.
 - Chrome-removal rules are heuristics; `tc-collect quality` flags leftovers (for example cookie-banner lines) but cannot prove a page is clean. The live-smoke Wikimedia language list was fixed on fixtures; it has not been re-fetched live.
 - The SSRF guard protects a user-run CLI. It is not a hardened server component (see `docs/SECURITY.md`).

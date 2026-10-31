@@ -34,6 +34,8 @@
       id: 'arbitration', title: 'Forced (binding) arbitration', severity: 'High', priority: 1,
       patterns: [
         { all: [r('\\bbinding arbitration\\b')] },
+        { all: [r('\\b(arbitrators?|arbitration (proceedings?|panel|award|rules|agreement|provision|clause))\\b')] },
+        { all: [r('\\barbitrat(ion|e|ed|ing)\\b'), r('\\b(shall|must|will|agree|agrees|final|binding|resolved|settled|submitted?|exclusive)\\b')] },
         { all: [r('\\b(disputes?|claims?|controvers\\w+|disagreements?|causes of action)\\b.{0,200}\\barbitrat(ion|or|ors|e|ed|ing)\\b')] },
         { all: [r('\\barbitrat(ion|or|ors|e|ed|ing)\\b.{0,200}\\b(disputes?|claims?|controvers\\w+|disagreements?)\\b')] }
       ],
