@@ -64,3 +64,6 @@ Still open for the owner (each is a separate go-ahead; none was done):
 - **Article-vs-terms heuristic**: a page is not read as terms when its address looks like an encyclopedia/news/blog/dated-article path or its title is a long headline. A legitimate terms page under such an address would show as "linked documents" instead. Acceptable?
 - **Cookie banners**: a banner with no recognisable markup, no fixed position and no agree-style button is still missed; the real-site check is a snapshot (see `docs/BROWSER_TESTING.md`).
 - Firefox for Android on a real phone, the real toolbar click and permission prompt in Chrome/Edge, and store review are untested.
+
+### Opera and cross-site frames (found in the v1.0.0 final pass)
+In Opera 139 the e2e check "iframe from another site not allowed" fails: the window does not add the note that part of the page is in a frame it could not read. Chrome, Edge, Brave, Vivaldi and Firefox pass it. Nothing is unsafe (the frame is simply not read), but the message is missing. Opera is not a store target for v1.0.0. Not investigated.

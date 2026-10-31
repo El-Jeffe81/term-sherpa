@@ -24,12 +24,12 @@ future `background.service_worker` into `background.scripts` for the Firefox pac
 
 ```
 cd prototype
-npm test                                   # unit suite (node:test), @@UNIT@@ tests
+npm test                                   # unit suite (node:test), 231 tests
 npm run validate                           # source manifest + both built packages
 npm run build                              # dist/chrome, dist/firefox + zips
 npm run lint:firefox                       # npx web-ext@10.8.0 lint -s dist/firefox (downloads web-ext on first use)
-CHROME_BIN=/path/to/browser npm run test:e2e              # Chromium-family e2e (@@CHROME@@ checks)
-FIREFOX_BIN=/path/to/firefox GECKODRIVER_BIN=/path/to/geckodriver npm run test:e2e:firefox   # Firefox e2e (@@FF@@ checks)
+CHROME_BIN=/path/to/browser npm run test:e2e              # Chromium-family e2e (44 checks)
+FIREFOX_BIN=/path/to/firefox GECKODRIVER_BIN=/path/to/geckodriver npm run test:e2e:firefox   # Firefox e2e (16 checks)
 npm run probe:warnings                     # which install warnings does the browser show for the manifest permissions
 CHROME_BIN=/path/to/browser npm run test:real             # real public sites (25 pages, about 4 minutes); results in $TC_REAL_OUT (default /workspace/real-sites)
 ```
@@ -37,7 +37,7 @@ Both e2e scripts skip themselves (exit 0, "SKIP") if the browser is not found. T
 
 ### Chromium-family e2e (`tests/e2e/chrome-smoke.mjs`)
 Drives the browser over the DevTools protocol on a pipe (`--remote-debugging-pipe`), loads the **unpacked source folder** with
-`Extensions.loadUnpacked`, opens a fixture news page with an "Agree" dialog, and checks @@CHROME@@ things (first-run screen, disclaimer line, icons, "nothing found" wording, consent boxes inside iframes, a 360 px phone layout, and the list below): the injected page scripts, the
+`Extensions.loadUnpacked`, opens a fixture news page with an "Agree" dialog, and checks 44 things (first-run screen, disclaimer line, icons, "nothing found" wording, consent boxes inside iframes, a 360 px phone layout, and the list below): the injected page scripts, the
 permission step, the guarded fetch (https only, no cookies, no Referer, robots.txt, redirects not followed, loopback refused), the
 combined explanation, the hostile document (script / `onerror` / injected instructions stay inert), opt-in storage, removal of granted access.
 `docs.newsco.test` is mapped to the local https server inside the throw-away profile only (`--host-resolver-rules`, `--ignore-certificate-errors`).
@@ -65,14 +65,14 @@ profile, and runs the same story as the Chrome test. Setup it needs, all confine
 
 | Browser | Version | How | Result |
 |---|---|---|---|
-| Google Chrome | 156.0.8078.47 | e2e, unpacked source | @@CHROME@@/@@CHROME@@ |
-| Microsoft Edge | 156.0.4314.58 | same e2e, `CHROME_BIN` | 35/35 |
-| Brave | 1.98.63 (Chromium 156.0.8078.80) | same e2e | 35/35 |
-| Vivaldi | 8.2.4133.96 | same e2e, opener-based tabs | 35/35 |
-| Opera | 139.0.6053.22 (Chromium 155) | same e2e, `GSETTINGS_SCHEMA_DIR` | 35/35 |
-| Firefox desktop | 159.0 (geckodriver 0.37.1) | Firefox e2e, `dist/firefox` | @@FF@@/@@FF@@ |
+| Google Chrome | 156.0.8078.47 | e2e, unpacked source | 44/44 |
+| Microsoft Edge | 156.0.4314.58 | same e2e, `CHROME_BIN` | 44/44 (re-run for v1.0.0) |
+| Brave | 1.98.63 (Chromium 156.0.8078.80) | same e2e | 44/44 (re-run for v1.0.0) |
+| Vivaldi | 8.2.4133.96 | same e2e, opener-based tabs | 44/44 on the re-run for v1.0.0 (the first run failed at start-up in the launcher step, the second passed: browser start-up timing) |
+| Opera | 139.0.6053.22 (Chromium 155) | same e2e, `GSETTINGS_SCHEMA_DIR` | **39 checks pass, then it stops** (two runs, same place). Earlier build: 35/35. The check that fails is "iframe from another site NOT allowed": in Opera the window does not say that part of the page is in a frame it could not read. Everything else before it passes, including the cross-site frame once site access is allowed. The later checks (JS-only page message, revoke) did not run. Not investigated further. |
+| Firefox desktop | 159.0 (geckodriver 0.37.1) | Firefox e2e, `dist/firefox` | 16/16 |
 
-Plus: `npm test` @@UNIT@@/@@UNIT@@, `npm run validate` OK, `web-ext lint -s dist/firefox` 0 errors / 0 warnings / 0 notices (web-ext 10.8.0), with add-on ID `term-sherpa@el-jeffe81.github.io`.
+Plus: `npm test` 231/231, `npm run validate` OK, `web-ext lint -s dist/firefox` 0 errors / 0 warnings / 0 notices (web-ext 10.8.0), with add-on ID `term-sherpa@el-jeffe81.github.io`.
 
 ### A real bug the Firefox run found
 `scripting.executeScript({ files: ['core/untrusted.js', ...] })` worked in Chrome but failed in Firefox ("Unable to load script"):
