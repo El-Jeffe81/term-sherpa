@@ -175,11 +175,6 @@ try {
   assert.equal(await launcher.ev("typeof chrome.windows.create"), 'function');
   assert.match(await launcher.ev('document.getElementById("status").textContent'), /./);
   if (process.env.TC_REVIEW) {
-    // the toolbar popup as it looks after a click on a normal page (the real strings from launcher.js), at popup width
-    await launcher.ev(`document.getElementById('status').textContent = 'The explanation window is open.'; document.getElementById('again').hidden = false;`);
-    await send('Emulation.setDeviceMetricsOverride', { width: 340, height: 230, deviceScaleFactor: 2, mobile: false }, launcher.sessionId);
-    await rshot(launcher, 'launcher');
-    await send('Emulation.clearDeviceMetricsOverride', {}, launcher.sessionId);
     await launcher.ev(`document.getElementById('status').textContent = 'Opening the explanation window...'; document.getElementById('again').hidden = true;`);
   }
   ok('launcher page loads in Chrome and chrome.windows is available without extra permission');
@@ -247,6 +242,7 @@ try {
   assert.equal(vCalm.kind, 'analysis'); assert.equal(vCalm.points.length, 0, JSON.stringify(vCalm.points));
   assert.equal(vCalm.nothing.hidden, false); assert.equal(vCalm.nothing.text, "Nothing found doesn't mean there's no risk.");
   assert.match(vCalm.visibleText, /Nothing found doesn't mean there's no risk\./);
+  if (process.env.TC_REVIEW) { await ex.ev(`document.getElementById('welcome').hidden = true`); await rshot(ex, 'nothing-found'); }
   ok('a terms text with no risk points still shows "Nothing found doesn\'t mean there\'s no risk." (and the line is hidden when risks are listed)');
 
   // small screen (Firefox for Android is about 360 CSS px wide): no sideways scrolling, tap targets at least 44 px, readable text
@@ -274,6 +270,47 @@ try {
     assert.ok(pN.over <= 0, 'popup page: sideways scroll ' + JSON.stringify(pN)); assert.deepEqual(pN.small, [], 'popup page: small tap targets');
     for (const pg of [ex, launcher, popup]) await send('Emulation.clearDeviceMetricsOverride', {}, pg.sessionId);
     ok(`360 px wide phone layout: explain window (result, and every section shown), launcher and saved-copies page - no sideways scroll, every button/link/summary at least 44 px tall, text at least 13 px (explain ${exN.controls}+${exN2.controls}, launcher ${lN.controls}, saved ${pN.controls} controls checked)`);
+  }
+
+  {
+    // launcher: when the explanation window for this page is already open, say so and offer to bring it to the front (no second window)
+    const pgId = 424242; // any number: the launcher only compares it with the ?tab= of the open explanation window
+    const exw = await openTab(`chrome-extension://${extId}/explain/explain.html?tab=${pgId}`);
+    const L2 = await openTab(`chrome-extension://${extId}/explain/launcher.html`);
+    await new Promise((r) => setTimeout(r, 800));
+    const src = await L2.ev(`fetch('launcher.js').then((r) => r.text())`);
+    // same script, with only the "which tab is active" question answered as if the page were the active tab; everything else is real
+    const out = JSON.parse(await L2.ev(`(async () => {
+      const b = document.getElementById('again'); b.replaceWith(b.cloneNode(true));
+      const orig = chrome.tabs.query.bind(chrome.tabs);
+      chrome.tabs.query = (q) => (q && q.active ? Promise.resolve([{ id: ${pgId}, url: 'https://docs.newsco.test/news/terms' }]) : orig(q));
+      document.getElementById('status').textContent = '';
+      window.__closed = 0; window.close = () => { window.__closed++; };
+      (0, eval)(${JSON.stringify('')} + ${JSON.stringify(src)});
+      await new Promise((r) => setTimeout(r, 800));
+      const btn = document.getElementById('again');
+      return JSON.stringify({ status: document.getElementById('status').textContent, btn: btn.textContent, hidden: btn.hidden });
+    })()`));
+    const seesOwn = JSON.parse(await launcher.ev(`chrome.tabs.query({}).then((ts) => JSON.stringify(ts.some((x) => (x.url || '').includes('/explain/explain.html?tab=${pgId}'))))`));
+    if (!seesOwn && VIA_OPENER) {
+      // Vivaldi hides every tab address from extensions that lack the tabs permission, so the launcher cannot know; it must fall back to its normal state
+      assert.equal(out.status, 'The explanation window is open.'); assert.equal(out.hidden, false);
+      ok('launcher (this browser hides tab addresses from the extension): falls back to the normal "The explanation window is open." state with the button');
+    } else {
+      assert.equal(out.status, 'Your explanation window is already open'); assert.equal(out.btn, 'Bring it to the front'); assert.equal(out.hidden, false);
+      if (process.env.TC_REVIEW) { // the toolbar popup in its real already-open state, at popup width
+        await send('Emulation.setDeviceMetricsOverride', { width: 340, height: 230, deviceScaleFactor: 2, mobile: false }, L2.sessionId);
+        await rshot(L2, 'launcher');
+        await send('Emulation.clearDeviceMetricsOverride', {}, L2.sessionId);
+      }
+      const countExplain = async () => JSON.parse(await launcher.ev(`chrome.tabs.query({}).then((ts) => JSON.stringify(ts.filter((x) => (x.url || '').includes('/explain/explain.html?tab=${pgId}')).length))`));
+      assert.equal(await countExplain(), 1);
+      await L2.ev(`document.getElementById('again').click(), new Promise((r) => setTimeout(r, 600))`);
+      assert.equal(await L2.ev('window.__closed'), 1, 'the launcher closes itself after bringing the window forward');
+      assert.equal(await countExplain(), 1, 'Bring it to the front does not open a second window');
+      ok('launcher: with the explanation window already open it reads "Your explanation window is already open" with a "Bring it to the front" button, and does not open a second window');
+    }
+    for (const t of [exw, L2]) await send('Target.closeTarget', { targetId: t.targetId }).catch(() => {});
   }
 
   const nv = await view(await runIn(site.base + '/news/terms', {}));

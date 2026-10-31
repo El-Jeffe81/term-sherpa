@@ -127,6 +127,12 @@ try {
   await waitFor('Explain page', async () => (await exec('return location.href')).includes('/explain/explain.html?tab='));
   ok('toolbar action -> popup launcher -> Explain window opened for the news tab (type "popup" window)');
 
+  // (3a) the launcher's "already open" check depends on the extension seeing its own Explain window's address in tabs.query (no tabs permission)
+  { const exUrl = await exec('return location.href'); const exTab = new URL(exUrl).searchParams.get('tab');
+    const seen = await execAsync(`const ts = await chrome.tabs.query({}); const base = chrome.runtime.getURL('explain/explain.html') + '?tab='; return ts.filter((t) => (t.url || '').startsWith(base) && new URL(t.url).searchParams.get('tab') === args[0]).length;`, [exTab]);
+    assert.equal(seen, 1, 'the extension sees its own Explain window in tabs.query');
+    ok('launcher already-open check: the extension sees its own Explain window (explain.html?tab=' + exTab + ') through tabs.query without the tabs permission'); }
+
   // (3b) first run: the welcome screen comes first (once); the exact disclaimer is always at the bottom; icon in the header
   const DISCLAIMER = "Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.";
   const shown = (id) => exec(`const e = document.getElementById(${JSON.stringify(id)}); return !e.hidden && e.getClientRects().length > 0`);
