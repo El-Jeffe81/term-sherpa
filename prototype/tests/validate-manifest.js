@@ -39,6 +39,9 @@ function validate(EXT, target) {
   // referenced files exist
   const refs = [m.action && m.action.default_popup].filter(Boolean);
   Object.values(m.icons || {}).forEach((f) => refs.push(f));
+  Object.values((m.action && m.action.default_icon) || {}).forEach((f) => refs.push(f));
+  for (const sz of ['16', '32', '48', '96', '128']) ok((m.icons || {})[sz] === 'icons/icon-' + sz + '.png', 'icons.' + sz + ' must be icons/icon-' + sz + '.png');
+  ok(!!(m.action && m.action.default_icon && m.action.default_icon['16'] && m.action.default_icon['32']), 'action.default_icon needs at least 16 and 32');
   for (const f of refs) ok(fs.existsSync(path.join(EXT, f)), 'missing file: ' + f);
 
   // every extension html page (popup launcher, explain window, legacy collection popup): scripts/links are local and exist; no inline scripts

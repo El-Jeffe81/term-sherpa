@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Term Sherpa</title>
+  <clipPath id="tile"><rect width="128" height="128" rx="28" ry="28"/></clipPath>
+  <g clip-path="url(#tile)">
+    <rect width="128" height="128" fill="#BFDDF5"/>
+    <polygon points="0,128 128,128 64,22" fill="#1F4E79"/>
+    <polygon points="64,22 76.8,43.2 70.4,38.2 65.92,44.2 60.8,38.2 56.32,42.2 51.2,43.2" fill="#FFFFFF"/>
+  </g>
+</svg>
