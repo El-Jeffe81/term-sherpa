@@ -7,7 +7,7 @@
  *
  * Network: none, EXCEPT reading the legal documents the page's "I agree" dialog links to (core/docfetch.js, the only
  * fetching code). That happens only after the click above, only for the https links found in the dialog (max 6),
- * logged out (credentials omitted), and only once the user allowed Chrome's one-time "access to <site>" prompt for
+ * logged out (credentials omitted), and only once the user allowed the browser's one-time "access to <site>" prompt for
  * just those sites (optional_host_permissions: nothing is allowed up front). The dialog itself is only read, never
  * clicked. Fetched text is untrusted, shown through textContent, and not saved unless "Also save a copy" is on.
  *
@@ -18,7 +18,8 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var INJECT_FILES = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'];
+  // Leading slash = relative to the extension root in every browser. Without it Firefox resolves the path against the calling page (explain/ or popup/) and the injection fails.
+  var INJECT_FILES = ['/core/untrusted.js', '/core/extract.js', '/core/detect.js', '/core/consent.js', '/content/run.js'];
   var SHOW_LINKS = 3; // list mode: this many, the rest behind "Show more"
   var pending = null; // documents waiting for the user's OK to read them: { links, ctx }
   var SAVE_KEY = 'tc.saveCopies';
@@ -208,7 +209,7 @@
     pending = { links: links, ctx: ctx };
     var labels = prep.accepted.map(function (d) { return d.label; });
     $('perm-text').textContent = 'To explain ' + labels.join(', ') + ' I need to read ' + (prep.accepted.length === 1 ? 'that document' : 'those ' + prep.accepted.length + ' documents') +
-      ' from ' + siteNames(prep.origins) + '. Chrome will ask you once to allow access to ' + (prep.origins.length === 1 ? 'that site' : 'those sites') + '. I read them logged out (no cookies) and do not click anything on your page.';
+      ' from ' + siteNames(prep.origins) + '. Your browser will ask you once to allow access to ' + (prep.origins.length === 1 ? 'that site' : 'those sites') + '. I read them logged out (no cookies) and do not click anything on your page.';
     $('perm-go').textContent = 'Read ' + (prep.accepted.length === 1 ? 'this document' : 'these ' + prep.accepted.length + ' documents');
     $('permission').hidden = false;
   }
@@ -222,10 +223,10 @@
       showCandidates(links, ctx);
       return { kind: 'links' };
     }
-    if (ctx.gesture) setStatus('Waiting for Chrome to ask you about access to ' + siteNames(prep.origins) + '...');
+    if (ctx.gesture) setStatus('Waiting for your browser to ask you about access to ' + siteNames(prep.origins) + '...');
     var granted = ctx.gesture ? await requestAccess(prep.origins) : (await hasAccess(prep.origins)) || (await requestAccess(prep.origins));
     if (!granted) {
-      if (ctx.gesture) setStatus('Chrome did not give access to ' + siteNames(prep.origins) + ', so nothing was read.', true);
+      if (ctx.gesture) setStatus('Access to ' + siteNames(prep.origins) + ' was not allowed, so nothing was read.', true);
       else setStatus(ctx.intro);
       showPermission(prep, links, ctx);
       showCandidates(links, ctx);

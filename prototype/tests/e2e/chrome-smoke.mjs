@@ -21,32 +21,14 @@ if (!CHROME) { console.log('SKIP: no Chrome/Chromium found (set CHROME_BIN)'); p
 // A real https server for the documents an agree dialog links to (the extension fetches https only, never loopback http).
 // docs.newsco.test is mapped to it inside this throw-away Chrome only (--host-resolver-rules), with a self-signed certificate
 // (--ignore-certificate-errors). Nothing in the extension is relaxed for this: the production URL guard sees a normal https URL.
-const SITES_DIR = path.join(ROOT, 'tests', 'fixtures', 'sites');
-const tlsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-tls-'));
-const sslOk = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', path.join(tlsDir, 'k.pem'), '-out', path.join(tlsDir, 'c.pem'), '-days', '2', '-subj', '/CN=docs.newsco.test', '-addext', 'subjectAltName=DNS:docs.newsco.test'], { stdio: 'ignore' }).status === 0;
-const tlsHits = [];
-const TLS_ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.html', '/cookies': 'newsco/cookies.html', '/community-guidelines': 'newsco/community-guidelines.html', '/subscriber-agreement': 'newsco/subscriber-agreement.html' };
-const tls = sslOk ? await new Promise((resolve) => {
-  const srv = require('node:https').createServer({ key: fs.readFileSync(path.join(tlsDir, 'k.pem')), cert: fs.readFileSync(path.join(tlsDir, 'c.pem')) }, (req, res) => {
-    tlsHits.push({ url: req.url, headers: req.headers });
-    const u = req.url.split('?')[0];
-    if (u === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: googlebot\nDisallow: /\n\nUser-agent: *\nDisallow: /blocked-by-robots\n'); }
-    // redirects: one inside the site, one to another address that answers with CORS "*" (so a followed redirect would even be readable)
-    if (u === '/moved-terms') { res.writeHead(302, { location: '/terms' }); return res.end(); }
-    if (u === '/moved-offsite') { res.writeHead(302, { location: `https://127.0.0.1:${tls.address().port}/redirect-trap` }); return res.end(); }
-    if (u === '/redirect-trap') { res.writeHead(200, { 'content-type': 'text/html', 'access-control-allow-origin': '*' }); return res.end('<html><body>trap</body></html>'); }
-    const f = u === '/blocked-by-robots' ? 'newsco/terms.html' : TLS_ROUTES[u];
-    if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f)));
-  });
-  srv.listen(0, '127.0.0.1', () => resolve(srv));
-}) : null;
+const docsTls = await require('../helpers/docs-tls.js').startDocsTls(); // null when openssl is missing
+const tls = docsTls && docsTls.server; const tlsHits = docsTls ? docsTls.hits : [];
 const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MAP docs.newsco.test 127.0.0.1:${tls.address().port}`] : [];
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chrome-'));
 // Pipe transport: Extensions.loadUnpacked is only available with --remote-debugging-pipe + --enable-unsafe-extension-debugging
 // (branded Chrome ignores --load-extension). This flag is for this throw-away test profile only.
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+const chrome = spawn(CHROME, [...(process.env.TC_HEADFUL ? [] : ['--headless=new']), '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--remote-debugging-pipe', '--enable-unsafe-extension-debugging', ...tlsFlags, `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let stderr = ''; chrome.stderr.on('data', (d) => { stderr += d; });
 const site = await startSite({ routes: {
@@ -55,7 +37,7 @@ const site = await startSite({ routes: {
   '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }, '/news/terms': { file: 'newsco/terms.html' },
   '/home': { file: 'newsco/home.html' }, '/cookie-banner': { file: 'newsco/cookie-banner.html' }, '/article': { file: 'newsco/article.html' }, '/privacy-center': { file: 'mediaco/privacy-center.html' }
 } });
-const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); if (tls) { tls.closeAllConnections(); tls.close(); } try { fs.rmSync(tlsDir, { recursive: true, force: true }); } catch {} try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
+const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); if (docsTls) docsTls.close(); try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
 process.on('exit', () => { try { chrome.kill('SIGKILL'); } catch {} });
 
 let id = 0; const pending = new Map(); const exceptions = [];
@@ -65,9 +47,24 @@ function onMessage(d) {
   if (d.id && pending.has(d.id)) { const p = pending.get(d.id); pending.delete(d.id); d.error ? p.j(new Error(JSON.stringify(d.error))) : p.r(d.result); }
   else if (d.method === 'Runtime.exceptionThrown') exceptions.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text);
 }
-const send = (method, params = {}, sessionId) => new Promise((r, j) => { const i = ++id; pending.set(i, { r, j }); chrome.stdio[3].write(JSON.stringify({ id: i, method, params, sessionId }) + '\0'); });
+const send = (method, params = {}, sessionId) => new Promise((r, j) => { const i = ++id; if (process.env.TC_TRACE) console.error('->', method, JSON.stringify(params).slice(0, 120)); pending.set(i, { r, j }); chrome.stdio[3].write(JSON.stringify({ id: i, method, params, sessionId }) + '\0'); });
+// Vivaldi's tabs live in its own UI (a web app), so Target.createTarget makes a tab that never loads. For such browsers (auto-detected,
+// or TC_OPEN_VIA_OPENER=1) a new tab is opened with window.open() from the browser's own first tab instead; everything after that is identical.
+const VIA_OPENER = !!process.env.TC_OPEN_VIA_OPENER || /vivaldi/i.test(CHROME);
+let opener = null; let openerReady = false;
+async function createTab() {
+  if (!VIA_OPENER) return (await send('Target.createTarget', { url: 'about:blank' })).targetId;
+  const pages = async () => (await send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page');
+  if (!openerReady) { openerReady = true; await new Promise((r) => setTimeout(r, 5000)); } // let the browser's own UI finish starting before touching its first tab
+  for (let i = 0; i < 100 && !opener; i++) { const p = (await pages()).find((t) => /^chrome-extension:/.test(t.url)); if (p) opener = (await send('Target.attachToTarget', { targetId: p.targetId, flatten: true })).sessionId; else await new Promise((r) => setTimeout(r, 200)); }
+  if (!opener) throw new Error('no first tab to open new tabs from');
+  const known = new Set((await pages()).map((t) => t.targetId));
+  await send('Runtime.evaluate', { expression: `window.open(${JSON.stringify(site.base + '/terms')}); 1`, userGesture: true }, opener);
+  for (let i = 0; i < 100; i++) { const n = (await pages()).find((t) => !known.has(t.targetId)); if (n) return n.targetId; await new Promise((r) => setTimeout(r, 100)); }
+  throw new Error('window.open did not create a tab');
+}
 async function openTab(url) {
-  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  const targetId = await createTab();
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
   await send('Runtime.enable', {}, sessionId); await send('Page.enable', {}, sessionId);
   await send('Page.navigate', { url }, sessionId);
@@ -280,7 +277,7 @@ try {
     assert.equal(pend.kind, 'permission'); assert.deepEqual(pend.docs, ['Terms', 'Privacy', 'Cookies', 'Community rules']);
     assert.deepEqual(pend.origins, ['https://docs.newsco.test/*']);
     assert.equal(pend.permHidden, false); assert.equal(pend.resultHidden, true);
-    assert.match(pend.perm, /Chrome will ask you once to allow access to that site/); assert.match(pend.btn, /Read these 4 documents/);
+    assert.match(pend.perm, /Your browser will ask you once to allow access to that site/); assert.match(pend.btn, /Read these 4 documents/);
     assert.match(pend.status, /agree dialog/); assert.match(pend.status, /will not click it/);
     assert.deepEqual(pend.granted, []); assert.equal(tlsHits.length, hitsBefore, 'nothing was fetched before the user approved the site');
     ok('real manifest: dialog found -> a "Read these 4 documents" button, no site access, zero requests to the document server until approved');
@@ -433,6 +430,6 @@ try {
   const nav = await popup.ev('JSON.stringify(performance.getEntriesByType("resource").map(r=>r.name).filter(n=>!n.startsWith("chrome-extension://")))');
   assert.equal(nav, '[]'); ok('popup made no non-extension network requests');
   assert.deepEqual(exceptions.filter((e) => !/127\.0\.0\.1/.test(e || '')), []); ok('no uncaught exceptions from extension code (the fixture page script error is ignored)');
-  console.log(`\nChrome e2e: ${results.length} checks passed (${(await send('Browser.getVersion')).product})`);
+  console.log(`\nChrome e2e: ${results.length} checks passed (${(await send('Browser.getVersion')).product}; binary: ${path.basename(CHROME)})`);
   await cleanup();
 } catch (e) { console.error('E2E FAILED:', e.message); if (process.env.DEBUG) console.error(stderr); console.error(stderr.split('\n').filter((l) => /extension|manifest/i.test(l)).slice(-5).join('\n')); await cleanup(); process.exit(1); }

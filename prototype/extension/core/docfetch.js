@@ -2,7 +2,7 @@
  * docfetch.js - reads the legal documents an agree dialog links to, on the user's click, and nothing else.
  *
  * This is the ONLY extension code that fetches anything. It is used from the Explain page after the user clicked the
- * toolbar button (and, if needed, approved Chrome's one-time "allow access to <site>" prompt for just that site).
+ * toolbar button (and, if needed, approved the browser's one-time "allow access to <site>" prompt for just that site).
  * Rules, all enforced here and covered by tests/docfetch.test.js:
  *   - https only; the static SSRF guard (core/netguard.js) must pass: no localhost, private/link-local addresses, no
  *     embedded credentials, no file:/data:/javascript:; account/checkout-looking URLs are never fetched

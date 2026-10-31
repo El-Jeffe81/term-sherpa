@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 'use strict';
-// Validates extension/manifest.json against the hard rules. Usage: node tests/validate-manifest.js
+// Validates the manifest against the hard rules.
+//   node tests/validate-manifest.js          -> extension/ (source) AND the built dist/chrome and dist/firefox packages (builds them first)
+//   node tests/validate-manifest.js source   -> extension/ only
+// The Firefox package gets the same hard rules plus Firefox-only checks (no fixed add-on ID yet, min version, data consent, no service worker).
 const fs = require('node:fs');
 const path = require('node:path');
-const EXT = path.join(__dirname, '..', 'extension');
+const ROOT = path.join(__dirname, '..');
+const SRC = path.join(ROOT, 'extension');
 
-function validate() {
+function validate(EXT, target) {
+  EXT = EXT || SRC; target = target || 'source';
   const errors = [];
   const ok = (c, m) => { if (!c) errors.push(m); };
   let m;
@@ -55,14 +60,50 @@ function validate() {
     const src = fs.readFileSync(path.join(EXT, js), 'utf8');
     const inj = /INJECT_FILES\s*=\s*\[([^\]]+)\]/.exec(src);
     ok(!!inj, js + ' must list INJECT_FILES');
-    if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) ok(fs.existsSync(path.join(EXT, f)), js + ': missing injected file: ' + f);
+    if (inj) for (const f of inj[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))) {
+      ok(f.startsWith('/'), js + ': injected file must start with "/" (extension root); Firefox resolves bare paths against the calling page: ' + f);
+      ok(fs.existsSync(path.join(EXT, f)), js + ': missing injected file: ' + f);
+    }
+  }
+
+  if (target === 'firefox') {
+    const g = ((m.browser_specific_settings || {}).gecko) || {};
+    ok(!('id' in g), 'firefox: gecko.id must stay unset until Jeff decides the add-on ID');
+    ok(parseInt(g.strict_min_version, 10) >= 140, 'firefox: gecko.strict_min_version must be >= 140 (data_collection_permissions needs Firefox 140)');
+    ok(JSON.stringify((g.data_collection_permissions || {}).required) === JSON.stringify(['none']) && !(g.data_collection_permissions || {}).optional, 'firefox: data_collection_permissions must be {required:["none"]} (nothing collected or sent)');
+    ok(!(m.background && m.background.service_worker), 'firefox: background.service_worker is not supported (use background.scripts)');
+    ok(!m.key && !m.update_url, 'firefox: no key/update_url');
+  } else {
+    ok(!('browser_specific_settings' in m), target + ': the shared/Chrome manifest must not carry Firefox-only settings');
   }
   return errors;
 }
 
-module.exports = { validate };
+// Both packages must come from the same source: identical file lists and bytes except manifest.json.
+function validatePackages() {
+  const { build, walk } = require(path.join(ROOT, 'scripts', 'build.js'));
+  const errors = [];
+  const out = {};
+  for (const t of ['chrome', 'firefox']) { out[t] = build(t); errors.push(...validate(out[t].dir, t).map((e) => t + ' package: ' + e)); }
+  const a = walk(out.chrome.dir); const b = walk(out.firefox.dir); const s = walk(SRC);
+  if (JSON.stringify(a) !== JSON.stringify(s) || JSON.stringify(b) !== JSON.stringify(s)) errors.push('packages must contain exactly the files in extension/');
+  for (const f of s) {
+    if (f === 'manifest.json') continue;
+    const x = fs.readFileSync(path.join(SRC, f));
+    if (!x.equals(fs.readFileSync(path.join(out.chrome.dir, f))) || !x.equals(fs.readFileSync(path.join(out.firefox.dir, f)))) errors.push('package file differs from source: ' + f);
+  }
+  if (!fs.readFileSync(path.join(out.chrome.dir, 'manifest.json')).equals(fs.readFileSync(path.join(SRC, 'manifest.json')))) errors.push('chrome package manifest must equal extension/manifest.json');
+  // Firefox manifest = shared manifest + overlay only: removing the overlay keys gives the shared manifest back.
+  const fm = JSON.parse(fs.readFileSync(path.join(out.firefox.dir, 'manifest.json'), 'utf8'));
+  delete fm.browser_specific_settings;
+  if (JSON.stringify(fm) !== JSON.stringify(JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')))) errors.push('firefox manifest differs from the shared manifest by more than browser_specific_settings');
+  return errors;
+}
+
+module.exports = { validate, validatePackages };
 if (require.main === module) {
-  const errs = validate();
+  const only = process.argv[2] === 'source';
+  const errs = validate().concat(only ? [] : validatePackages());
   if (errs.length) { console.error('MANIFEST INVALID:\n- ' + errs.join('\n- ')); process.exit(1); }
-  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)');
+  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)' + (only ? '' : '; chrome + firefox packages OK'));
 }

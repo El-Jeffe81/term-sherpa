@@ -13,3 +13,5 @@ li { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; margin: 6px 0
 pre { white-space: pre-wrap; max-height: 140px; overflow: auto; background: #f6f6f6; padding: 6px; font-size: 11px; }
 #status { margin: 8px 0; min-height: 1em; }
 #status.err { color: #a40000; }
+
+@media (max-width: 420px) { body { width: auto; } } /* opened in a tab on a phone */
