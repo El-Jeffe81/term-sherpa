@@ -11,7 +11,12 @@ the CLI, mode 600). There is no central collection, no upload, no analytics. Rec
 - It reads nothing until the user clicks. Permissions: `activeTab` + `scripting`; no content scripts,
   no background worker. Since v0.3.0 the Explain window may fetch the documents an agree dialog links to, using one *optional*
   host permission (`https://*/*`) that is requested per site at click time (see `implementation.md`); the fetch code is
-  `extension/core/docfetch.js` only (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
+  `extension/core/docfetch.js` plus the robots.txt reader `extension/core/robots.js` (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
+  Since v0.3.1 redirects are never followed (`redirect:'manual'`; the redirect target is never requested, so a document cannot bounce the
+  extension to localhost, a private or another address), bare IP-address hosts are refused, and `robots.txt` is checked first
+  (user-agent `*`, fail-open on missing/unreadable/slow, in-memory for one analysis). The manifest deliberately has no
+  `declarativeNetRequest*` permission: the variant that could vet redirects up front shows the install warning "Block content on any page",
+  and the warning-free variant cannot cover unpermitted sites (measured in headless Chrome: `npm run probe:dnr`).
 - **Only the terms document itself is saved**, never the page the user happens to be on.
   - Page is itself a terms page: its main text and sections are saved.
   - Page is any other page: **only the detected links** are stored (URL, link text, type, language, PDF flag and the

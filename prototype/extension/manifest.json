@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Terms Guide (working name)",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Explains the terms, privacy policy or 'I agree' dialog you are on in plain English, on this device. Nothing saved by default.",
   "action": {
     "default_title": "Terms Guide: explain this page",
