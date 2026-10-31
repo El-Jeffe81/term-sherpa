@@ -101,7 +101,7 @@ test('explain: the page is read in one place only (runOnPage, started from run()
 test('explain: page text is rendered with textContent only (no HTML sinks)', () => {
   const js = explainSrc();
   assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment|srcdoc|\.setAttribute\(\s*['"]on/.test(js));
-  assert.ok(/\.textContent = text/.test(js) && /createTextNode/.test(js));
+  assert.ok(/\.textContent = text/.test(js), "page-derived strings are set through textContent");
   const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
   assert.match(html, /Informational, not legal advice/, 'notice is in the page itself, before any result');
   assert.ok(html.indexOf('Informational, not legal advice') < html.indexOf('id="result"'));
@@ -134,6 +134,18 @@ test('explain: Explain window loads the engine scripts in dependency order from 
   const at = (f) => srcs.indexOf(f);
   assert.ok(at('../core/quote.js') > -1 && at('../core/rules.js') > -1 && at('../core/analyze.js') > -1 && at('explain.js') > -1);
   assert.ok(at('../core/rules.js') < at('../core/analyze.js') && at('../core/quote.js') < at('../core/analyze.js') && at('../core/analyze.js') < at('explain.js'));
+  assert.ok(at('../core/context.js') > -1 && at('../core/context.js') < at('../core/analyze.js'), 'context.js is loaded before analyze.js');
+});
+
+test('explain: concise window - exact wording sits in a collapsed <details>, and the filler is gone from the page', () => {
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  const js = explainSrc();
+  assert.match(js, /el\('details'\)/);
+  assert.match(js, /el\('summary', 'Show exact wording'\)/);
+  assert.ok(!/\.open\s*=|setAttribute\(\s*['"]open/.test(js), 'details are never opened by script');
+  assert.ok(!/<details[^>]*\bopen\b/.test(html), 'and never open in the markup');
+  for (const f of [html, js]) assert.ok(!/word count|reading time|\bminutes\b|of the 12|What you have to do|What it is about|What you.re agreeing to/i.test(f), 'no filler text');
+  assert.match(html, /Worth knowing/);
 });
 
 test('docs: README documents the Explain usage and implementation.md keeps CSO Concerns first', () => {

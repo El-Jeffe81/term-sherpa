@@ -27,7 +27,7 @@ let stderr = ''; chrome.stderr.on('data', (d) => { stderr += d; });
 const site = await startSite({ routes: {
   '/terms': { file: 'acme/terms.html' }, '/signup': { file: 'acme/index.html' }, '/cookies': { file: 'acme/cookies.html' }, '/privacy': { file: 'divsoup/privacy.html' },
   '/accordion/terms': { file: 'accordion/terms.html' }, '/langlist/terms': { file: 'langlist/terms.html' }, '/legal': { file: 'hub/legal.html' },
-  '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }
+  '/hostile/terms': { headers: { 'content-type': 'text/html; charset=utf-8' }, body: fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'sites', 'hostile', 'terms.html'), 'utf8').replace('alert(2)', 'window.__pageOwnScript=1') } /* the fixture's own onerror would open a blocking dialog in a real browser; swapped for a harmless flag */, '/i18n': { file: 'i18n/index.html' }, '/about': { file: 'acme/index.html' }, '/checkout/terms': { file: 'acme/terms.html' }, '/news/terms': { file: 'newsco/terms.html' }
 } });
 const cleanup = async () => { try { chrome.kill('SIGKILL'); } catch {} await site.close(); try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch {}; };
 process.on('exit', () => { try { chrome.kill('SIGKILL'); } catch {} });
@@ -162,21 +162,36 @@ try {
   const view = async (res) => JSON.parse(await ex.ev(`(async () => {
     const out = await TCExplainUI.show(${JSON.stringify(res)});
     const q = (sel) => [...document.querySelectorAll(sel)].map((n) => n.textContent);
+    const point = (li) => ({ sec: li.closest('ul').id, cls: li.className, badge: li.querySelector('.badge') ? li.querySelector('.badge').textContent : '', line: li.querySelector('.line .text').textContent,
+      ctx: li.querySelector('.ctx') ? li.querySelector('.ctx').textContent : '', open: li.querySelector('details').open, toggle: li.querySelector('summary').textContent,
+      quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent), quoteVisible: [...li.querySelectorAll('blockquote')].some((b) => b.checkVisibility()) });
     return JSON.stringify({ kind: out.kind, hidden: document.getElementById('result').hidden, status: document.getElementById('status').textContent,
-      summary: q('#overview-summary li'), service: q('#service-quotes blockquote'), obligations: q('#obligation-quotes blockquote'),
-      cards: [...document.querySelectorAll('#risk-list .card')].map((c) => ({ cls: c.className, title: c.querySelector('h3').textContent, quotes: [...c.querySelectorAll('blockquote')].map((b) => b.textContent), explain: c.querySelector('p').textContent })),
-      agree: q('#agree-list li'), imgs: document.querySelectorAll('img, script:not([src]), iframe, object, embed').length, docs: (await TCDB.listDocs()).length });
+      summary: q('#overview-summary li'), points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map(point),
+      visibleText: document.getElementById('result').innerText, imgs: document.querySelectorAll('img, script:not([src]), iframe, object, embed').length, docs: (await TCDB.listDocs()).length });
   })()`));
   const v1 = await view(terms);
   assert.equal(v1.kind, 'analysis'); assert.equal(v1.hidden, false);
   assert.equal(v1.docs, 0, 'default: nothing saved in IndexedDB');
   assert.match(v1.status, /Nothing was saved/);
-  assert.deepEqual(v1.cards.map((c) => c.cls.split(' ').pop()), ['sev-High', 'sev-High', 'sev-Medium', 'sev-Medium', 'sev-Medium', 'sev-Low', 'sev-Low', 'sev-Low'], 'ranked High, Medium, Low');
-  assert.ok(v1.cards.every((c) => c.quotes.length >= 1 && c.explain.length > 60));
-  for (const c of v1.cards) for (const qt of c.quotes) assert.ok(terms.extracted.text.replace(/\s+/g, ' ').includes(qt.replace(/\s+/g, ' ')), 'quote is verbatim in the page text: ' + qt);
-  assert.ok(v1.cards[0].quotes[0].includes('individual arbitration') );
-  assert.ok(v1.agree.length === 8 && v1.summary.length >= 3 && v1.service.length >= 1 && v1.obligations.length >= 1);
-  ok('explain window renders overview, ranked risks with exact quotes, and the agreeing list; nothing saved by default');
+  assert.deepEqual(v1.points.map((c) => c.cls.split(' ').pop()), ['sev-High', 'sev-High', 'sev-Medium', 'sev-Medium', 'sev-Low', 'sev-Low', 'sev-Low'], 'ranked High, Medium, Low, with the dispute points merged into one');
+  assert.deepEqual(v1.points.map((c) => c.sec), ['risk-list', 'risk-list', 'risk-list', 'risk-list', 'also-list', 'also-list', 'also-list']);
+  assert.ok(v1.points.every((c) => c.line.length > 10 && c.line.length < 120 && !c.open && c.toggle === 'Show exact wording' && c.quotes.length >= 1));
+  assert.ok(v1.points.every((c) => !c.quoteVisible), 'exact wording is collapsed by default');
+  for (const c of v1.points) for (const qt of c.quotes) assert.ok(terms.extracted.text.replace(/\s+/g, ' ').includes(qt.replace(/\s+/g, ' ')), 'quote is verbatim in the page text: ' + qt);
+  assert.equal(v1.points[0].line, "Disputes go to private arbitration, and you can't join a class action lawsuit.");
+  assert.ok(v1.points[0].quotes.some((x) => x.includes('individual arbitration')));
+  assert.equal(v1.summary.length, 3);
+  assert.ok(!/\bwords?\b|minutes|reading time|of the 12|topics/i.test(v1.visibleText), 'no word count or other filler in the visible text');
+  assert.ok(!terms.extracted.text.split(/\n/).some((l) => l.length > 60 && v1.visibleText.includes(l)), 'long passages of the terms are not copied into the window');
+  ok('explain window: 3-line overview, one sentence per point, ranked, exact wording collapsed and verbatim; no word count; nothing saved by default');
+
+  const nv = await view(await runIn(site.base + '/news/terms', {}));
+  const liab = nv.points.find((c) => /limit what they owe/.test(c.line));
+  assert.ok(liab && liab.sec === 'also-list' && liab.cls.endsWith('sev-Low'), 'on a news site limited liability is a lower concern');
+  assert.match(liab.ctx, /news or media/);
+  assert.match(nv.summary[1], /news \/ media/);
+  assert.equal(nv.points.filter((c) => /arbitration|class action|jury/i.test(c.line)).length, 1, 'arbitration, class action and jury waiver are one line');
+  ok('explain window: news-site terms are read in context (limited liability not a High risk, dispute points merged)');
 
   const hv = await view(await runIn(site.base + '/hostile/terms', {}));
   assert.equal(hv.imgs, 0, 'no img/script/iframe elements created from page text');

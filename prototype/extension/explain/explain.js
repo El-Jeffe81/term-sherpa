@@ -73,10 +73,29 @@
   /* ---------- rendering (textContent only) ---------- */
   function sevBadge(sev) { return el('span', sev, 'badge sev-' + sev); }
 
-  function quoteItem(q, truncated) {
-    var li = el('li');
-    li.appendChild(el('blockquote', q));
-    if (truncated) li.appendChild(el('div', 'Shortened: the part shown is an exact piece of a longer sentence.', 'muted'));
+  function quoteBlock(q, truncated) {
+    var d = el('div');
+    d.appendChild(el('blockquote', q));
+    if (truncated) d.appendChild(el('div', 'Shortened: this is an exact piece of a longer sentence.', 'muted'));
+    return d;
+  }
+
+  // One finding = one plain-English sentence. The exact verified wording is collapsed (a <details>, closed by default).
+  function pointItem(f) {
+    var li = el('li', undefined, 'point sev-' + f.severity);
+    var top = el('div', undefined, 'line');
+    top.appendChild(sevBadge(f.severity));
+    top.appendChild(el('span', f.line, 'text'));
+    li.appendChild(top);
+    if (f.contextNote) li.appendChild(el('div', f.contextNote, 'ctx'));
+    var d = el('details');
+    d.appendChild(el('summary', 'Show exact wording'));
+    f.evidence.forEach(function (e) { d.appendChild(quoteBlock(e.quote, e.truncated)); });
+    if (f.mitigation) {
+      d.appendChild(el('div', 'Opt-out wording:', 'label'));
+      d.appendChild(quoteBlock(f.mitigation.quote, false));
+    }
+    li.appendChild(d);
     return li;
   }
 
@@ -84,41 +103,19 @@
     $('result').hidden = false;
     var sum = $('overview-summary'); clear(sum);
     a.overview.summary.forEach(function (t) { sum.appendChild(el('li', t)); });
-    if (a.injectionHints > 0) sum.appendChild(el('li', 'Note: this page contains text that looks like instructions to an AI. It was ignored; page text is only ever treated as data.'));
+    var notes = a.overview.notes.slice();
+    if (a.injectionHints > 0) notes.push('This page contains text that looks like instructions to an AI. It was ignored; page text is only ever treated as data.');
+    $('overview-note').textContent = notes.join(' ');
+    $('overview-note').hidden = notes.length === 0;
 
-    var svc = $('service-quotes'); clear(svc);
-    a.overview.service.forEach(function (q) { svc.appendChild(quoteItem(q)); });
-    $('overview-service').hidden = a.overview.service.length === 0;
-    var ob = $('obligation-quotes'); clear(ob);
-    a.overview.obligations.forEach(function (q) { ob.appendChild(quoteItem(q)); });
-    $('overview-obligations').hidden = a.overview.obligations.length === 0;
-
-    var list = $('risk-list'); clear(list);
-    if (!a.findings.length) list.appendChild(el('p', 'No risk topics were found by the scan.'));
-    a.findings.forEach(function (f) {
-      var card = el('div', undefined, 'card sev-' + f.severity);
-      var h = el('h3'); h.appendChild(sevBadge(f.severity)); h.appendChild(document.createTextNode(f.title));
-      card.appendChild(h);
-      var p = el('p'); p.appendChild(el('strong', 'In plain English: ')); p.appendChild(document.createTextNode(f.explain));
-      card.appendChild(p);
-      card.appendChild(el('div', f.evidence.length > 1 ? 'From the terms (' + f.evidence.length + (f.totalMatches > f.evidence.length ? ' of ' + f.totalMatches : '') + ' quotes):' : 'From the terms:', 'muted'));
-      var ul = el('ul', undefined, 'quotes');
-      f.evidence.forEach(function (e) { ul.appendChild(quoteItem(e.quote, e.truncated)); });
-      card.appendChild(ul);
-      if (f.mitigation) {
-        var m = el('p'); m.appendChild(el('strong', 'Possible way out: ')); m.appendChild(document.createTextNode(f.mitigation.note));
-        card.appendChild(m);
-        card.appendChild(el('blockquote', f.mitigation.quote));
-      }
-      list.appendChild(card);
-    });
-    var nf = $('not-found-list'); clear(nf);
-    a.notFound.forEach(function (n) { nf.appendChild(el('li', n.title)); });
-    $('not-found').hidden = a.notFound.length === 0;
-
-    var ag = $('agree-list'); clear(ag);
-    if (!a.agreeing.length) ag.appendChild(el('li', 'The scan found none of the topics it checks for. Read the terms yourself before agreeing.'));
-    a.agreeing.forEach(function (x) { var li = el('li'); li.appendChild(sevBadge(x.severity)); li.appendChild(document.createTextNode(x.text)); ag.appendChild(li); });
+    var risk = a.findings.filter(function (f) { return f.section === 'risk'; });
+    var also = a.findings.filter(function (f) { return f.section === 'also'; });
+    var rl = $('risk-list'); clear(rl);
+    risk.forEach(function (f) { rl.appendChild(pointItem(f)); });
+    $('risks').hidden = risk.length === 0;
+    var al = $('also-list'); clear(al);
+    also.forEach(function (f) { al.appendChild(pointItem(f)); });
+    $('also').hidden = also.length === 0;
   }
 
   function showCandidates(links) {

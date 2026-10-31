@@ -11,24 +11,22 @@
   <div id="status" role="status" aria-live="polite">Reading the page...</div>
 
   <main id="result" hidden>
-    <section id="overview" aria-labelledby="h-overview">
-      <h2 id="h-overview">1. Overview in plain English</h2>
-      <ul id="overview-summary"></ul>
-      <div id="overview-service"><h3>What it is about <span class="muted">(sentences copied from the document)</span></h3><ul class="quotes" id="service-quotes"></ul></div>
-      <div id="overview-obligations"><h3>What you have to do <span class="muted">(sentences copied from the document)</span></h3><ul class="quotes" id="obligation-quotes"></ul></div>
+    <section id="overview" aria-label="Overview">
+      <ul id="overview-summary" class="overview"></ul>
+      <p id="overview-note" class="muted" hidden></p>
     </section>
 
     <section id="risks" aria-labelledby="h-risks">
-      <h2 id="h-risks">2. Key risks, highest first</h2>
-      <p class="muted">Each quote is an exact sentence from the page, checked word for word. Severity is a rough guide from fixed rules, not a verdict.</p>
-      <div id="risk-list"></div>
-      <details id="not-found"><summary>Topics the scan did not find</summary><ul id="not-found-list"></ul><p class="muted">Not finding a topic does not mean the terms are silent on it. The scan only recognises common wording.</p></details>
+      <h2 id="h-risks">Worth knowing</h2>
+      <ul id="risk-list" class="points"></ul>
     </section>
 
-    <section id="agreeing" aria-labelledby="h-agree">
-      <h2 id="h-agree">3. What you're agreeing to</h2>
-      <ul id="agree-list"></ul>
+    <section id="also" aria-labelledby="h-also">
+      <h2 id="h-also">Also agreeing to <span class="muted">(lower concern)</span></h2>
+      <ul id="also-list" class="points"></ul>
     </section>
+
+    <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict. Not finding something does not mean the terms do not contain it. The full terms are on the page if you want to read them.</p>
   </main>
 
   <section id="candidates" hidden>
@@ -58,6 +56,7 @@
   <script src="../core/quote.js"></script>
   <script src="../core/versioning.js"></script>
   <script src="../core/rules.js"></script>
+  <script src="../core/context.js"></script>
   <script src="../core/analyze.js"></script>
   <script src="../popup/db.js"></script>
   <script src="explain.js"></script>
