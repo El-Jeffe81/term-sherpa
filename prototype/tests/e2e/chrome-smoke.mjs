@@ -52,7 +52,7 @@ async function openTab(url) {
 const results = []; const ok = (name) => { results.push(name); console.log('  ok -', name); };
 try {
   // (1) injected scripts in a real DOM
-  const inject = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'content/run.js'].map((f) => fs.readFileSync(path.join(EXT, f), 'utf8')).join('\n;\n');
+  const inject = ['core/untrusted.js', 'core/extract.js', 'core/detect.js', 'core/consent.js', 'content/run.js'].map((f) => fs.readFileSync(path.join(EXT, f), 'utf8')).join('\n;\n');
   const runIn = async (url, opts) => { const t = await openTab(url); await t.ev(`globalThis.__tcOptions = ${JSON.stringify(opts)}`); await t.ev(inject); const r = await t.ev('JSON.stringify(globalThis.__tcResult)'); await send('Target.closeTarget', { targetId: t.targetId }); return JSON.parse(r); };
 
   const terms = await runIn(site.base + '/terms', {});
