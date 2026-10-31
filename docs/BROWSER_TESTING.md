@@ -24,7 +24,7 @@ future `background.service_worker` into `background.scripts` for the Firefox pac
 
 ```
 cd prototype
-npm test                                   # unit suite (node:test), 234 tests
+npm test                                   # unit suite (node:test), 236 tests
 npm run validate                           # source manifest + both built packages
 npm run build                              # dist/chrome, dist/firefox + zips
 npm run lint:firefox                       # npx web-ext@10.8.0 lint -s dist/firefox (downloads web-ext on first use)
@@ -68,11 +68,11 @@ profile, and runs the same story as the Chrome test. Setup it needs, all confine
 | Google Chrome | 156.0.8078.47 | e2e, unpacked source | 45/45 |
 | Microsoft Edge | 156.0.4314.58 | same e2e, `CHROME_BIN` | 45/45 |
 | Brave | 1.98.63 (Chromium 156.0.8078.80) | same e2e | 45/45 |
-| Vivaldi | 8.2.4133.96 | same e2e, opener-based tabs | 45/45 (the launcher "already open" state falls back to the normal state there, because Vivaldi hides tab addresses from extensions; the first run failed at start-up in the launcher step, the second passed: browser start-up timing) |
-| Opera | 139.0.6053.22 (Chromium 155) | same e2e, `GSETTINGS_SCHEMA_DIR` | **39 checks pass, then it stops** (two runs, same place). Earlier build: 35/35. The check that fails is "iframe from another site NOT allowed": in Opera the window does not say that part of the page is in a frame it could not read. Everything else before it passes, including the cross-site frame once site access is allowed. The later checks (JS-only page message, revoke) did not run. Not investigated further. |
+| Vivaldi | 8.2.4133.96 | same e2e, opener-based tabs | 45/45 (Vivaldi hides tab addresses from extensions, so the launcher cannot tell whether the window is already open: it shows only the "Open the explanation window" button, no sentence, and the test asserts that state; one earlier run failed at start-up in the launcher step: browser start-up timing) |
+| Opera | 139.0.6053.22 (Chromium 155) | same e2e, `GSETTINGS_SCHEMA_DIR` | **Known issue, not re-run on the final build:** 39 checks passed, then it stopped (two earlier runs, same place). Earlier build: 35/35. The check that fails is "iframe from another site NOT allowed": in Opera the window does not say that part of the page is in a frame it could not read. Everything else before it passes, including the cross-site frame once site access is allowed. The later checks (JS-only page message, revoke) did not run. Not investigated further. |
 | Firefox desktop | 159.0 (geckodriver 0.37.1) | Firefox e2e, `dist/firefox` | 17/17 |
 
-Plus: `npm test` 234/234, `npm run validate` OK, `web-ext lint -s dist/firefox` 0 errors / 0 warnings / 0 notices (web-ext 10.8.0), with add-on ID `term-sherpa@el-jeffe81.github.io`.
+Plus: `npm test` 236/236, `npm run validate` OK, `web-ext lint -s dist/firefox` 0 errors / 0 warnings / 0 notices (web-ext 10.8.0), with add-on ID `term-sherpa@el-jeffe81.github.io`.
 
 ### A real bug the Firefox run found
 `scripting.executeScript({ files: ['core/untrusted.js', ...] })` worked in Chrome but failed in Firefox ("Unable to load script"):
