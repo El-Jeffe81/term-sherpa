@@ -40,13 +40,13 @@ test('the page is only touched inside click handlers (executeScript appears only
 });
 
 test('privacy lint: the extension contains no network calls, tracking, remote code or beacons', () => {
-  // The single exception is core/docfetch.js (reads the documents an agree dialog links to; see tests/docfetch.test.js),
-  // which receives `fetch` by injection from explain.js. No other file may call fetch.
+  // The only exceptions are core/docfetch.js and core/robots.js (read the documents an agree dialog links to; see tests/docfetch.test.js),
+  // which receive `fetch` by injection from explain.js. No other file may call fetch.
   const banned = [/\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /WebSocket/, /EventSource/, /\bimport\s*\(/, /importScripts/, /\beval\s*\(/, /new Function/,
     /google-analytics|googletagmanager|gtag\(|mixpanel|segment\.(io|com)|sentry|amplitude|hotjar|plausible/i, /document\.cookie/, /\.innerHTML\s*=/, /chrome\.cookies|chrome\.history|chrome\.webRequest|chrome\.identity|chrome\.downloads/];
   for (const f of walk(EXT).filter((x) => /\.(js|html|json|css)$/.test(x))) {
     const src = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    const isDocFetch = path.relative(EXT, f) === path.join('core', 'docfetch.js');
+    const isDocFetch = [path.join('core', 'docfetch.js'), path.join('core', 'robots.js')].includes(path.relative(EXT, f));
     for (const re of banned) if (!(isDocFetch && re.source === '\\bfetch\\s*\\(')) assert.ok(!re.test(src), `${path.relative(ROOT, f)} matches ${re}`);
     if (f.endsWith('.html')) assert.ok(!/(src|href)="https?:/i.test(src), f + ' loads a remote resource');
   }
@@ -54,7 +54,7 @@ test('privacy lint: the extension contains no network calls, tracking, remote co
 
 test('privacy lint: fetch is reachable from exactly one place - explain.js hands window.fetch to docfetch.js, after the click', () => {
   const users = walk(EXT).filter((x) => /\.js$/.test(x)).filter((f) => /\bfetch\b/.test(stripComments(fs.readFileSync(f, 'utf8'))));
-  assert.deepEqual(users.map((f) => path.relative(EXT, f)).sort(), [path.join('core', 'docfetch.js'), path.join('explain', 'explain.js')]);
+  assert.deepEqual(users.map((f) => path.relative(EXT, f)).sort(), [path.join('core', 'docfetch.js'), path.join('core', 'robots.js'), path.join('explain', 'explain.js')]);
   const js = explainSrc();
   assert.equal([...js.matchAll(/\bfetch\b/g)].length, 2, 'only the dependency hand-over { fetch: window.fetch.bind(window) } and its definition');
   assert.match(js, /fetch: window\.fetch\.bind\(window\)/);

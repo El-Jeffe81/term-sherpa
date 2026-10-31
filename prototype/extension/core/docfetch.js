@@ -11,16 +11,22 @@
  *   - credentials:'omit' (logged out, no cookies), no Referer, no custom User-Agent (the browser's honest default),
  *     no cache, GET only
  *   - a time limit and a size limit per document; only html / xhtml / plain text responses are read
- *   - redirects are re-checked against the same guard (no downgrade to http, no hop to a private address)
+ *   - NO redirect is followed (redirect:'manual'): a page that redirects is reported as "not read" and the window shows its link.
+ *     Why: the only way to vet a redirect target BEFORE the request goes out would be a declarativeNetRequest block rule, and
+ *     (verified in headless Chrome, see tests/e2e/dnr-probe.mjs) that needs the "Block content on any page" install warning;
+ *     the warning-free variant (declarativeNetRequestWithHostAccess) does not cover sites we have no access to, which is exactly
+ *     the case that matters. Not following redirects means nothing is ever requested from an address we have not vetted.
+ *   - IP-literal hosts (https://203.0.113.9/...) are refused as well as private ranges: legal documents live on named sites
+ *   - before each document, https://<site>/robots.txt is read the same guarded way (core/robots.js); a disallow skips the document
  *   - the response is parsed with an injected parser that builds an inert tree (the page's scripts, images and styles
  *     are never run or loaded); all resulting text is treated as untrusted
  * Nothing here stores anything. Dependencies (fetch, parser, guards) are injected so Node tests can drive it.
  */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(typeof module === 'object' && module.exports ? require('./robots') : root.TCRobots);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.TCDocFetch = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Robots) {
   'use strict';
 
   var MAX_DOCS = 6;
@@ -42,6 +48,7 @@
       try { u = new URL(url); } catch (e) { reason = 'not a valid link'; }
       if (!reason) reason = deps.guard.urlProblem(u) ? 'link not allowed (' + deps.guard.urlProblem(u) + ')' : null;
       if (!reason && u.protocol !== 'https:') reason = 'not an https link';
+      if (!reason && deps.guard.isIpLiteral(u.hostname)) reason = 'link not allowed (a bare IP address, not a named site)';
       if (!reason && deps.detect.isSensitivePage(u.href)) reason = 'looks like an account or payment page';
       if (!reason && (d.is_pdf || /\.pdf$/i.test(u.pathname))) reason = 'a PDF (open the link)';
       var key = u ? u.href : url;
@@ -96,26 +103,37 @@
 
   /*
    * fetchDoc(doc, deps) -> Promise<{label, doc_type, url, ok, text?, title?, lang?, reason?, sections?}>
-   * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController? }
+   * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController?,
+   *   robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
    */
+  function isRedirect(res) {
+    return res.type === 'opaqueredirect' || res.redirected === true || (res.status >= 300 && res.status < 400);
+  }
+
   function fetchDoc(doc, deps) {
     var AC = deps.AbortController || globalThis.AbortController;
-    var ctl = new AC(), timedOut = false;
-    var timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS);
+    var ctl = new AC(), timedOut = false, timer = null;
     var limit = deps.maxBytes || MAX_BYTES;
+    var robotsCheck = deps.robots === false ? null : (deps.robotsCheck || Robots.createChecker(deps));
     var base = { label: doc.label, doc_type: doc.doc_type, url: doc.url, variants: doc.variants };
     function fail(reason) { return Object.assign({ ok: false, reason: reason }, base); }
 
     return Promise.resolve().then(function () {
+      return robotsCheck ? robotsCheck(doc.url) : { allowed: true };
+    }).then(function (rb) {
+      if (!rb.allowed) return { skipped: fail(rb.reason) };
+      timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS); // starts after the robots.txt check
       return deps.fetch(doc.url, {
-        method: 'GET', credentials: 'omit', redirect: 'follow', referrerPolicy: 'no-referrer', cache: 'no-store',
+        method: 'GET', credentials: 'omit', redirect: 'manual', referrerPolicy: 'no-referrer', cache: 'no-store',
         signal: ctl.signal, headers: { Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9' }
       });
     }).then(function (res) {
+      if (res.skipped) return res.skipped;
       var finalUrl = res.url || doc.url;
       var bad = deps.guard.urlProblem(finalUrl);
       if (bad) return fail('the site redirected somewhere that is not allowed');
       if (!/^https:/i.test(finalUrl)) return fail('the site redirected to a non-https address');
+      if (isRedirect(res) || finalUrl !== doc.url) return fail('the site sent this page to another address; redirects are not followed (open the link)');
       if (!res.ok) return fail('the site answered with an error (' + res.status + ')');
       var ct = (res.headers && res.headers.get && res.headers.get('content-type') || '').toLowerCase();
       var kind = /^(text\/html|application\/xhtml\+xml)/.test(ct) ? 'html' : /^text\/plain/.test(ct) ? 'text' : '';
@@ -140,12 +158,14 @@
       if (timedOut || m === 'timeout' || (e && e.name === 'AbortError')) return fail('the site took too long to answer');
       if (m === 'too_large') return fail('too large to read here');
       return fail('could not be reached (blocked, offline, or access not allowed)');
-    }).then(function (r) { clearTimeout(timer); return r; });
+    }).then(function (r) { if (timer) clearTimeout(timer); return r; });
   }
 
   // Sequential, so a click makes at most MAX_DOCS requests, one at a time.
+  // One robots.txt checker per call = robots.txt is cached per site for this analysis only and dropped afterwards.
   function fetchAll(docs, deps, onProgress) {
     var out = [];
+    if (deps.robots !== false && !deps.robotsCheck) deps = Object.assign({}, deps, { robotsCheck: Robots.createChecker(deps) });
     return docs.reduce(function (p, d, i) {
       return p.then(function () {
         if (onProgress) onProgress(i, docs.length, d);

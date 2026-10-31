@@ -29,7 +29,13 @@ const TLS_ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.
 const tls = sslOk ? await new Promise((resolve) => {
   const srv = require('node:https').createServer({ key: fs.readFileSync(path.join(tlsDir, 'k.pem')), cert: fs.readFileSync(path.join(tlsDir, 'c.pem')) }, (req, res) => {
     tlsHits.push({ url: req.url, headers: req.headers });
-    const f = TLS_ROUTES[req.url.split('?')[0]];
+    const u = req.url.split('?')[0];
+    if (u === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: googlebot\nDisallow: /\n\nUser-agent: *\nDisallow: /blocked-by-robots\n'); }
+    // redirects: one inside the site, one to another address that answers with CORS "*" (so a followed redirect would even be readable)
+    if (u === '/moved-terms') { res.writeHead(302, { location: '/terms' }); return res.end(); }
+    if (u === '/moved-offsite') { res.writeHead(302, { location: `https://127.0.0.1:${tls.address().port}/redirect-trap` }); return res.end(); }
+    if (u === '/redirect-trap') { res.writeHead(200, { 'content-type': 'text/html', 'access-control-allow-origin': '*' }); return res.end('<html><body>trap</body></html>'); }
+    const f = u === '/blocked-by-robots' ? 'newsco/terms.html' : TLS_ROUTES[u];
     if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f)));
   });
@@ -338,14 +344,14 @@ try {
 
     // the requests the extension made
     const mine = tlsHits.slice(hitsBefore);
-    assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/terms'], 'one request per document, nothing else (no crawling, no favicon, no robots)');
+    assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/robots.txt', '/terms'], 'one request per document plus ONE robots.txt for the site, nothing else (no crawling, no favicon)');
     for (const h of mine) {
       assert.equal(h.headers.cookie, undefined, 'logged out: no cookies sent although one exists for the site');
       assert.equal(h.headers.referer, undefined);
       assert.ok(/^Mozilla\/5\.0/.test(h.headers['user-agent']) && !/terms|guide|tc-/i.test(h.headers['user-agent']), 'the browser\'s own User-Agent');
       assert.equal(h.headers.authorization, undefined);
     }
-    ok('requests: one GET per document, no cookies (even with a session cookie present), no Referer, default User-Agent');
+    ok('requests: one GET per document + one robots.txt for the site, no cookies (even with a session cookie present), no Referer, default User-Agent');
 
     // a JS-only linked document is said to be unreadable and its link is offered
     const withJs = JSON.parse(JSON.stringify(home));
@@ -358,6 +364,22 @@ try {
     assert.ok(j.docItems.some((t) => /not read: link not allowed/.test(t)));
     assert.ok(!tlsHits.some((h) => /internal/.test(h.url)));
     ok('JS-only document -> "needs JavaScript" with its link offered; a non-https / loopback link is refused and never requested');
+
+    // robots.txt disallow and redirects: skipped / not followed, with the link offered, and the other documents still read
+    const withRedir = JSON.parse(JSON.stringify(home));
+    withRedir.consent.links = withRedir.consent.links.filter((l) => /\/(terms|privacy)$/.test(l.url));
+    for (const [pth, text] of [['blocked-by-robots', 'Blocked Policy'], ['moved-terms', 'Moved Terms'], ['moved-offsite', 'Offsite Terms']]) {
+      withRedir.consent.links.push({ url: 'https://docs.newsco.test/' + pth, text, doc_type: 'other', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 });
+    }
+    const before2 = tlsHits.length;
+    const rd = await gview(withRedir);
+    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 3);
+    assert.ok(rd.docItems.some((t) => /Blocked Policy/.test(t) && /not read: the site's robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.docItems));
+    assert.ok(rd.docItems.some((t) => /Moved Terms/.test(t) && /not read: the site sent this page to another address; redirects are not followed/.test(t) && /Open this page/.test(t)));
+    assert.ok(rd.docItems.some((t) => /Offsite Terms/.test(t) && /not read: the site sent this page to another address/.test(t) && /Open this page/.test(t)));
+    const hits2 = tlsHits.slice(before2).map((h) => h.url).sort();
+    assert.deepEqual(hits2, ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets (/redirect-trap and the same-site /terms hop) never requested; each redirecting URL requested once');
+    ok('robots.txt disallow -> page never requested, link + reason shown; redirects (same-site and off-site) are not followed, never requested, link shown; the rest still read');
 
     // list mode: regional duplicates collapsed, three shown, the rest behind a toggle, and the dialog result still works for a banner
     const pc = await runIn(site.base + '/privacy-center', {});
