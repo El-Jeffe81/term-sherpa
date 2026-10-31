@@ -13,6 +13,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:e2e": "node tests/e2e/chrome-smoke.mjs",
+    "test:real": "node tests/e2e/real-sites.mjs",
     "test:e2e:firefox": "node tests/e2e/firefox-smoke.mjs",
     "validate": "node tests/validate-manifest.js",
     "build": "node scripts/build.js",

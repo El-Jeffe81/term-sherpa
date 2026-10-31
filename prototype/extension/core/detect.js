@@ -28,7 +28,7 @@
     ['eula', /\/(eula|end-user-licen[sc]e[a-z-]*|licen[sc]e-agreement)(\/|\.html?|\.pdf|$)/i],
     ['cookies', /\/cookies?([-_](policy|notice|statement|settings))?(\/|\.html?|\.pdf|$)/i],
     ['privacy', /\/(privacy([-_](policy|notice|statement|center|centre))?|privacypolicy|data-protection|datenschutz)(\/|\.html?|\.pdf|$)/i],
-    ['tos', /\/(terms([-_](of[-_](service|use|sale)|and[-_]conditions|conditions))?|tos|tnc|t-and-c|conditions(-of-use)?|user-agreement|terms_of_service|termsofservice|termsofuse)(\/|\.html?|\.pdf|$)/i],
+    ['tos', /\/(terms([-_](of[-_](service|use|sale)|and[-_]conditions|conditions))?|tos|tnc|t-and-c|conditions(-of-use)?|user-agreement|terms_of_service|termsofservice|termsofuse|services?-?agreement)(\/|\.html?|\.pdf|$)/i],
     ['other', /\/(legal|imprint|legal-notice)(\/|\.html?|\.pdf|$)/i]
   ];
 
@@ -104,11 +104,20 @@
     ['eula', /\beula\b|end[-\s]?user licen[sc]e|licen[sc]e agreement/i],
     ['cookies', /cookie (policy|notice|statement)|use of cookies/i],
     ['privacy', /privacy (policy|notice|statement)|data protection (policy|notice)|privacy and cookie/i],
-    ['tos', /terms (of (service|use|sale)|and conditions|& conditions)|terms ?& ?conditions|conditions of use|user agreement|\bterms$/i]
+    ['tos', /terms (of (service|use|sale)|and conditions|& conditions)|terms ?& ?conditions|conditions of use|user agreement|(services?|customer|subscriber|master) agreement|\bterms$/i]
   ];
 
   // Links into news/blog-style sections are articles ABOUT privacy/terms, not the documents.
   var NEGATIVE_PATH = /\/(news|blog|blogs|article|articles|press|posts?|stories|story|events?|careers?|jobs)\//i;
+
+  // The page itself (not a link) sits in an encyclopedia/news/blog-style place, or has a headline instead of a document title:
+  // an ARTICLE ABOUT terms ("Instagram changes its Terms of Service", Wikipedia's "Terms of service"), not the terms.
+  var ARTICLE_PATH = /(^|\/)(wiki|news|blog|blogs|article|articles|press|posts?|stories|story|magazine)(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  var MAX_TITLE_WORDS = 9;
+  function headlineLike(s) {
+    var first = String(s || '').split(/\s[-\u2013\u2014|:\u00b7]\s/)[0].trim();
+    return first.split(/\s+/).filter(Boolean).length > MAX_TITLE_WORDS;
+  }
 
   var MIN_TEXT_FOR_PATH_MATCH = 500;
   var MIN_TEXT_FOR_TITLE_MATCH = 1500;
@@ -248,6 +257,8 @@
         if (TEXT_I18N[ti][1] !== 'other' && TEXT_I18N[ti][2].test(info.h1 || '') && /(^|\s)(pol[i\u00ed]tica|aviso|t[e\u00e9]rminos|condiciones|conditions|politique|nutzungsbedingungen|datenschutz|termos|termini|informativa|privacidade|confidentialit)/i.test(info.h1 || '')) { byTitle = TEXT_I18N[ti][1]; break; }
       }
     }
+    if (ARTICLE_PATH.test(p)) { byPath = null; byTitle = null; }
+    else if (byTitle && headlineLike(info.h1 || '') && headlineLike(info.title || '')) byTitle = null;
     var len = info.textLength || 0;
     var sensitive = isSensitivePage(info.url);
     if (sensitive) return { isTerms: false, isHub: false, thin: false, sensitive: true, doc_type: null, reasons: ['sensitive-looking page (account, checkout, payment...): never read as a document'] };
