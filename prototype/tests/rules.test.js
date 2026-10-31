@@ -524,3 +524,54 @@ test('rules are fixed data: no network, no AI, no dynamic code in the engine fil
     assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|\beval\s*\(|new Function|innerHTML|chrome\.|LanguageModel|window\.ai|\bai\.(languageModel|summarizer)|navigator\.ml/.test(src), f);
   }
 });
+
+/* ---------- CSO floor: context never hides dispute waivers, data sale/sharing, or a broad content licence ---------- */
+const { SEVERITY_FLOOR } = require('../extension/core/rules.js');
+
+test('floor: the listed rules are exactly arbitration, class action, jury waiver, data sharing, content licence (Medium)', () => {
+  assert.deepEqual(Object.keys(SEVERITY_FLOOR).sort(), ['arbitration', 'class_action', 'data_sharing', 'jury_waiver', 'user_content_license']);
+  assert.ok(Object.values(SEVERITY_FLOOR).every((v) => v === 'Medium'));
+});
+
+test('floor: a page disguised as news still shows arbitration, data sale and a broad licence at Medium or above', () => {
+  const disguised = 'Daily Example News brings you journalism: articles, video, newsletters and our editorial team. ' +
+    'Any dispute will be resolved by binding arbitration, and you waive the right to participate in a class action. ' +
+    'We may sell your personal information to advertising partners. ' +
+    'You grant us a worldwide, royalty-free license to use the content you submit.';
+  const a = analyze(disguised, { doc_type: 'tos', host: 'dailyexample-news.test' });
+  assert.equal(a.context.type, 'news_media');
+  const rank = { High: 0, Medium: 1, Low: 2 };
+  for (const id of ['arbitration', 'class_action', 'data_sharing', 'user_content_license']) {
+    const f = a.findings.find((x) => x.rules.includes(id));
+    assert.ok(f, id);
+    assert.ok(rank[f.severity] <= rank.Medium, id + ' was ' + f.severity);
+    assert.equal(f.section, 'risk', id);
+  }
+});
+
+test('floor: a context shift that would push a Medium floor rule to Low is stopped at Medium (matrix mutated for the test)', () => {
+  const had = CONTEXT_MATRIX.data_sharing;
+  const text = 'We share your personal information with advertising partners and marketing partners.';
+  try {
+    CONTEXT_MATRIX.data_sharing = { news_media: { shift: -1, note: 'Pretend this is routine for news sites.' } };
+    const a = analyze(FILLER + text, { doc_type: 'privacy', context: 'news_media' });
+    const f = item(a, 'data_sharing');
+    assert.equal(f.baseSeverity, 'Medium');
+    assert.equal(f.severity, 'Medium', 'floored');
+    assert.equal(f.contextNote, '', 'nothing changed, so no note');
+    // a rule that is NOT floored does drop (control)
+    assert.equal(item(analyze(FILLER + NEWS_LIAB, { context: 'news_media' }), 'liability_disclaimer').severity, 'Low');
+  } finally { CONTEXT_MATRIX.data_sharing = had; }
+});
+
+test('floor: a pattern that is Low on its own (service providers) stays Low, and the merged dispute group is floored too', () => {
+  const sp = 'We share your personal information with service providers that help us run the service.';
+  assert.equal(item(run(sp), 'data_sharing').severity, 'Low');
+  try {
+    CONTEXT_MATRIX.disputes = { news_media: { shift: -1, note: 'Pretend this is routine for news sites.' } };
+    const a = analyze(FILLER + 'You may opt out of arbitration within 30 days. Any dispute will be resolved by binding arbitration.', { context: 'news_media' });
+    const d = item(a, 'disputes');
+    assert.equal(d.baseSeverity, 'Medium', 'opt-out wording makes the base Medium');
+    assert.equal(d.severity, 'Medium', 'floored, not Low');
+  } finally { delete CONTEXT_MATRIX.disputes; }
+});

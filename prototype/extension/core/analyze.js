@@ -192,8 +192,24 @@
       var cell = (TCRules.CONTEXT_MATRIX[f.id] || {})[type];
       if (!cell) return;
       var next = shiftSeverity(f.severity, cell.shift);
+      next = floored(f, next);
       if (next !== f.severity) { f.severity = next; f.contextNote = cell.note; }
     });
+  }
+
+  // CSO floor (rules.js SEVERITY_FLOOR): context never pushes these under Medium. A finding that was already below the
+  // floor on its own pattern (base Low, e.g. "service providers") is left as it is.
+  function floored(f, next) {
+    var floorSev = null;
+    (f.rules || [f.id]).forEach(function (id) {
+      var fl = TCRules.SEVERITY_FLOOR[id];
+      if (fl && (!floorSev || TCRules.SEVERITY_RANK[fl] < TCRules.SEVERITY_RANK[floorSev])) floorSev = fl;
+    });
+    // for a merged group the floor of its most serious member applies
+    if (!floorSev) return next;
+    var rank = TCRules.SEVERITY_RANK;
+    if (rank[next] > rank[floorSev] && rank[f.baseSeverity] <= rank[floorSev]) return floorSev;
+    return next;
   }
 
   function headline(items) {

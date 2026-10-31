@@ -237,8 +237,7 @@
       software: { shift: 1, note: 'Matters more for subscriptions and apps.' }
     },
     user_content_license: {
-      social: { shift: 1, note: 'Matters more on a platform where you post your own content.' },
-      shopping: { shift: -1, note: 'On a shop this is mostly about reviews you write, so shown as a lower concern.' }
+      social: { shift: 1, note: 'Matters more on a platform where you post your own content.' }
     },
     data_sharing: {
       finance: { shift: 1, note: 'Matters more for financial data.' }
@@ -252,8 +251,20 @@
     }
   };
 
+  /*
+   * CSO floor: the service type may RAISE these, and may lower them, but never below Medium. A forced-arbitration /
+   * class-action / jury-waiver clause, a sale or sharing of your data, and a broad licence over your content matter
+   * whatever the site is (a page that merely looks like a news site must not hide them). The floor only stops a context
+   * shift from pushing a finding under Medium; a rule whose own pattern says Low (for example "shared with service
+   * providers that run the service") stays Low.
+   */
+  var SEVERITY_FLOOR = {
+    arbitration: 'Medium', class_action: 'Medium', jury_waiver: 'Medium', data_sharing: 'Medium', user_content_license: 'Medium'
+  };
+
   return {
     RULES: RULES,
+    SEVERITY_FLOOR: SEVERITY_FLOOR,
     SEVERITIES: SEVERITIES,
     SEVERITY_RANK: SEVERITY_RANK,
     GROUPS: GROUPS,
