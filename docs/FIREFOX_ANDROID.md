@@ -40,4 +40,4 @@ no content scripts and no declarativeNetRequest, so it does not hit the known MV
 ## How to test it for real (free)
 1. Install Android Studio's emulator or use a spare phone with USB debugging, plus Firefox (Nightly, Beta or release) on it.
 2. `cd prototype && npm run build:firefox`, then from `dist/firefox`: `npx web-ext run -t firefox-android --firefox-apk org.mozilla.firefox` (use `org.mozilla.fenix` for Nightly).
-3. Open an invented terms page served from your computer, open the extensions menu, tap Terms Guide, confirm the Explain tab opens, tap "Read these documents", and confirm the permission prompt and the explanation.
+3. Open an invented terms page served from your computer, open the extensions menu, tap Term Sherpa, confirm the Explain tab opens, tap "Read these documents", and confirm the permission prompt and the explanation.

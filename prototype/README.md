@@ -1,4 +1,4 @@
-# tc-prototype: local proof of concept for a free "terms guide" (working name, not decided)
+# tc-prototype: source for Term Sherpa, a free plain-English guide to terms and privacy policies
 
 Phase: **Explain** (built on the consumption phase). Click the extension on a terms page, or at an "I agree" dialog, and a window explains it in plain
 English, briefly: a 3-line overview, then one plain sentence per point (High / Medium first, lower concerns after), judged

@@ -299,14 +299,14 @@
 
   async function run() {
     var tabId = parseInt(new URLSearchParams(location.search).get('tab') || '', 10);
-    if (!isFinite(tabId)) { setStatus('Open a web page with terms on it, then click the Terms Guide icon in the toolbar.'); return; }
+    if (!isFinite(tabId)) { setStatus('Open a web page with terms on it, then click the Term Sherpa icon in the toolbar.'); return; }
     try {
       var tab = await chrome.tabs.get(tabId);
       if (!/^https?:/i.test(tab.url || '')) throw new Error('I can only read normal web pages (http/https), not this kind of page.');
       var res = await runOnPage(tab, { pickedType: findPick(tab.url) });
       await show(res);
     } catch (e) {
-      setStatus(e.message + ' If the page was changed or closed, click the Terms Guide icon again.', true);
+      setStatus(e.message + ' If the page was changed or closed, click the Term Sherpa icon again.', true);
     }
   }
 
@@ -329,7 +329,7 @@
     if (problem) return setStatus('I will not open that address: ' + problem, true);
     addPick(u.href, 'other');
     chrome.tabs.create({ url: u.href });
-    setStatus('Opened. Click the Terms Guide icon on that page.');
+    setStatus('Opened. Click the Term Sherpa icon on that page.');
   });
 
   var box = $('save-copies');

@@ -160,7 +160,7 @@
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'terms-guide-export.json';
+    a.download = 'term-sherpa-export.json';
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }

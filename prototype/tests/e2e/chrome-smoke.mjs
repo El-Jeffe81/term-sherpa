@@ -134,7 +134,7 @@ try {
   // (2) real extension popup + IndexedDB
   const { id: extId } = await send('Extensions.loadUnpacked', { path: EXT });
   const popup = await openTab(`chrome-extension://${extId}/popup/popup.html`);
-  assert.equal(await popup.ev('document.title'), 'Terms Guide');
+  assert.equal(await popup.ev('document.title'), 'Term Sherpa');
   assert.equal(await popup.ev("typeof chrome.scripting + '/' + typeof chrome.tabs"), 'object/object');
   assert.equal(await popup.ev('document.getElementById("help").textContent'), 'Please help me');
   ok('extension loads in Chrome; popup renders with "Please help me" (id ' + extId + ')');
@@ -182,7 +182,7 @@ try {
   ok('loaded manifest: only activeTab + scripting, no up-front host access (only optional https), no content_scripts');
 
   const ex = await openTab(`chrome-extension://${extId}/explain/explain.html`);
-  assert.match(await ex.ev('document.getElementById("status").textContent'), /click the Terms Guide icon/i);
+  assert.match(await ex.ev('document.getElementById("status").textContent'), /click the Term Sherpa icon/i);
   assert.match(await ex.ev('document.getElementById("notice").textContent'), /Informational, not legal advice/);
   await ex.ev('TCDB.clearAll().then(() => localStorage.clear())');
   const view = async (res) => JSON.parse(await ex.ev(`(async () => {

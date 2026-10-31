@@ -4,7 +4,7 @@ This project is free and stays free, so this guide covers only the zero-cost rou
 created, no listing submitted, no GitHub release made. These are the steps for whoever does it, after the open items at the bottom are decided.
 
 Build the packages first (`cd prototype && npm run build`, see `BROWSER_TESTING.md`):
-`dist/terms-guide-<version>-chrome.zip` and `dist/terms-guide-<version>-firefox.zip`.
+`dist/term-sherpa-<version>-chrome.zip` and `dist/term-sherpa-<version>-firefox.zip`.
 
 ## Route summary
 
@@ -18,10 +18,10 @@ Build the packages first (`cd prototype && npm run build`, see `BROWSER_TESTING.
 
 ## 1. Chrome-family users: install free from a GitHub release zip
 No store is involved. The user does this once (and again to update):
-1. Download `terms-guide-<version>-chrome.zip` from the repository's Releases page and unzip it to a folder they will keep (the browser loads it from there).
+1. Download `term-sherpa-<version>-chrome.zip` from the repository's Releases page and unzip it to a folder they will keep (the browser loads it from there).
 2. Open `chrome://extensions` (Edge: `edge://extensions`, Brave: `brave://extensions`, Vivaldi: `vivaldi://extensions`, Opera: `opera://extensions`) and switch on **Developer mode**.
 3. Click **Load unpacked** and choose the unzipped folder (the one containing `manifest.json`).
-4. Pin the Terms Guide icon, open a page with an "I agree" dialog, click the icon.
+4. Pin the Term Sherpa icon, open a page with an "I agree" dialog, click the icon.
 
 Honest limits to say in the release notes: the browser shows a "developer mode extensions" notice, nothing updates automatically, and the
 user must trust the zip (publish its SHA-256 next to it). Whoever makes the release: attach the two zips from `npm run build`; `gh release create`
@@ -31,17 +31,16 @@ is a deliberate step for the owner and was not run here.
 Account: a free Mozilla account at addons.mozilla.org; there is no developer fee. Review is automatic first, with human review possible afterwards.
 
 Before the first submission:
-- **Add-on ID: open decision for Jeff.** No ID is set yet (`browser_specific_settings.gecko.id` is left out on purpose). AMO needs one before
-  the first upload, and it is permanent once published. Firefox gives the add-on a temporary ID for local testing.
+- **Add-on ID:** `term-sherpa@el-jeffe81.github.io` (decided by Jeff on 2026-10-31). It is permanent once published on AMO.
 - `data_collection_permissions` is already `{"required": ["none"]}` (the extension collects and transmits nothing); AMO requires this declaration for new add-ons. Keep it truthful.
-- The name is still "Terms Guide (working name)" (OPEN_QUESTIONS #3). Pick the real name first.
+- The name is decided: "Term Sherpa".
 - The manifest has no `icons`. AMO will use a default icon; a real icon is strongly recommended for a listing (and required by the other stores).
 - Prepare a short description, a longer description, a privacy statement ("no data collected; runs on your device; optional saved copies stay in the browser"), and a licence. The licence is undecided (OPEN_QUESTIONS #4); AMO asks for one.
 
 Steps (listed on AMO):
-1. `npm run build:firefox` and `npm run lint:firefox`. Until the add-on ID is chosen, it reports one expected error, `ADDON_ID_REQUIRED`; after the ID is set, expect 0 errors.
+1. `npm run build:firefox` and `npm run lint:firefox`. Expect 0 errors.
 2. Sign in at addons.mozilla.org -> **Developer Hub** -> **Submit a New Add-on**.
-3. Choose **On this site** (listed). Upload `terms-guide-<version>-firefox.zip`.
+3. Choose **On this site** (listed). Upload `term-sherpa-<version>-firefox.zip`.
 4. Source code: the package is the plain, unminified source with no build step, so there is no separate source to upload.
 5. Fill in the listing and the notes for reviewers (explain the optional `https://*/*` permission: it is requested per site, only after the user clicks, to read the documents an "I agree" dialog links to; mention `activeTab` + `scripting`).
 6. Submit. After approval Firefox installs it permanently and updates it automatically.
@@ -61,7 +60,7 @@ Work or school accounts are not supported for this. Microsoft states there is no
 Steps:
 1. Register at Partner Center -> Microsoft Edge program (individual account is enough).
 2. `npm run build:chrome`; the Chrome package is a normal MV3 package that Edge loads (tested in Edge 156, see `BROWSER_TESTING.md`).
-3. In Partner Center -> **Create new extension**, upload `terms-guide-<version>-chrome.zip`.
+3. In Partner Center -> **Create new extension**, upload `term-sherpa-<version>-chrome.zip`.
 4. Fill in the listing: name, description, privacy policy link (a hosted page is needed; GitHub Pages or the repository README works), a logo and a small promotional tile (current required sizes are on Microsoft's publish page), optional screenshots.
 5. Put the permission explanation in "Notes for certification". Submit; Microsoft says certification can take up to seven business days.
 

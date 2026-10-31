@@ -1,7 +1,7 @@
 {
   "name": "tc-prototype",
   "version": "0.1.0",
-  "description": "Local proof of concept: collect terms/privacy/EULA/cookie text into a local dataset (Chrome MV3 extension + Node CLI). Working name only.",
+  "description": "Local proof of concept: collect terms/privacy/EULA/cookie text into a local dataset (Chrome MV3 extension + Node CLI). Product name: Term Sherpa.",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
