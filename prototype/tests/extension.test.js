@@ -120,8 +120,9 @@ test('explain: the page is read in one place only (runOnPage, started from run()
   assert.equal([...js.matchAll(/\brun\(\)/g)].length, 4, 'definition + start(), Continue on the welcome screen, and look-again after the person allows a frame\'s site');
   assert.ok(!/chrome\.(history|cookies|webRequest|downloads|identity)/.test(js));
   const store = [...js.matchAll(/chrome\.storage\.\w+\.\w+/g)].map((m) => m[0]);
-  assert.deepEqual(store, ['chrome.storage.local.get', 'chrome.storage.local.set'], 'chrome.storage.local only (never sync), only get/set of the welcome marker');
+  assert.deepEqual([...new Set(store)].sort(), ['chrome.storage.local.get', 'chrome.storage.local.remove', 'chrome.storage.local.set'], 'chrome.storage.local only (never sync), only get/set/remove of the two yes/no markers');
   assert.match(js, /WELCOME_KEY = 'tc\.welcomeSeen'/);
+  assert.match(js, /DECLINED_KEY = 'tc\.allSitesDeclined'/, 'the only other marker is the "Not now" answer for all-sites access');
 });
 
 test('explain: page text is rendered with textContent only (no HTML sinks)', () => {
@@ -201,7 +202,7 @@ test('explain: order is Summary, Worth knowing, amber "could not be read" notice
   // script: the documents-read box is collapsed by script too; the amber notice says plainly why; robots.js is not loaded
   const js = explainSrc();
   assert.match(js, /box\.open = false;/);
-  assert.match(js, /renderUnreadNotice/); assert.match(js, /I could not read this one because/);
+  assert.match(js, /renderUnreadNotice/); assert.match(js, /wasn't read\./); assert.match(js, /documents couldn't be read/);
   assert.ok(!/robots\.js/.test(html), 'robots.js is not loaded by the Explain page');
   const css = fs.readFileSync(path.join(EXT, 'explain', 'explain.css'), 'utf8');
   assert.match(css, /#unread\b[^{]*\{[^}]*(#?[a-f0-9]{3,6}|amber|orange)/i, 'the notice has amber styling');
