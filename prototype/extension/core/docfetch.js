@@ -16,6 +16,8 @@
  *     (verified in headless Chrome, see tests/e2e/dnr-probe.mjs) that needs the "Block content on any page" install warning;
  *     the warning-free variant (declarativeNetRequestWithHostAccess) does not cover sites we have no access to, which is exactly
  *     the case that matters. Not following redirects means nothing is ever requested from an address we have not vetted.
+ *   - Firefox only: deps.dnsCheck (core/dnsguard.js, browser.dns.resolve) refuses a name that resolves to a private/loopback/link-local/reserved
+ *     address before any request; Chrome has no such API and keeps the static checks only
  *   - IP-literal hosts (https://203.0.113.9/...) are refused as well as private ranges: legal documents live on named sites
  *   - before each document, https://<site>/robots.txt is read the same guarded way (core/robots.js); a disallow skips the document
  *   - the response is parsed with an injected parser that builds an inert tree (the page's scripts, images and styles
@@ -104,10 +106,33 @@
   /*
    * fetchDoc(doc, deps) -> Promise<{label, doc_type, url, ok, text?, title?, lang?, reason?, sections?}>
    * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController?,
-   *   robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
+   *   dnsCheck? (Firefox only, see above), robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
    */
   function isRedirect(res) {
     return res.type === 'opaqueredirect' || res.redirected === true || (res.status >= 300 && res.status < 400);
+  }
+
+  /*
+   * A redirect is never followed. It is reported plainly, with the place it leads to when the browser lets us know it (usually
+   * it does not: a manual redirect is "opaque" so the target stays unknown), and only if that place passes the same URL guard.
+   * { redirect: true, target?: href } -> the window says "This link sends you to another page. Open it and run Term Sherpa there."
+   */
+  function redirectTarget(res, finalUrl, doc, deps) {
+    var cand = '';
+    try { cand = (res.headers && res.headers.get && res.headers.get('location')) || ''; } catch (e) { cand = ''; }
+    if (!cand && finalUrl && finalUrl !== doc.url) cand = finalUrl;
+    if (!cand) return '';
+    try {
+      var u = new URL(cand, doc.url);
+      if (u.protocol !== 'https:' || deps.guard.urlProblem(u) || deps.guard.isIpLiteral(u.hostname)) return '';
+      return u.href;
+    } catch (e) { return ''; }
+  }
+  function redirectFail(res, finalUrl, doc, fail, deps) {
+    var target = redirectTarget(res, finalUrl, doc, deps);
+    var out = Object.assign(fail('this link sends you to another page'), { redirect: true });
+    if (target) out.target = target;
+    return out;
   }
 
   function fetchDoc(doc, deps) {
@@ -119,8 +144,13 @@
     function fail(reason) { return Object.assign({ ok: false, reason: reason }, base); }
 
     return Promise.resolve().then(function () {
+      // Firefox only (deps.dnsCheck exists only there): a name that resolves to a private/internal address is never requested, not even robots.txt
+      return deps.dnsCheck ? deps.dnsCheck(new URL(doc.url).hostname) : null;
+    }).then(function (dnsProblem) {
+      if (dnsProblem) return { skipped: fail('not opened: ' + dnsProblem) };
       return robotsCheck ? robotsCheck(doc.url) : { allowed: true };
     }).then(function (rb) {
+      if (rb.skipped) return rb;
       if (!rb.allowed) return { skipped: fail(rb.reason) };
       timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS); // starts after the robots.txt check
       return deps.fetch(doc.url, {
@@ -131,9 +161,9 @@
       if (res.skipped) return res.skipped;
       var finalUrl = res.url || doc.url;
       var bad = deps.guard.urlProblem(finalUrl);
-      if (bad) return fail('the site redirected somewhere that is not allowed');
-      if (!/^https:/i.test(finalUrl)) return fail('the site redirected to a non-https address');
-      if (isRedirect(res) || finalUrl !== doc.url) return fail('the site sent this page to another address; redirects are not followed (open the link)');
+      if (bad) return Object.assign(fail('this link sends you to an address that is not allowed'), { redirect: true });
+      if (!/^https:/i.test(finalUrl)) return Object.assign(fail('this link sends you to a page that is not https'), { redirect: true });
+      if (isRedirect(res) || finalUrl !== doc.url) return redirectFail(res, finalUrl, doc, fail, deps);
       if (!res.ok) return fail('the site answered with an error (' + res.status + ')');
       var ct = (res.headers && res.headers.get && res.headers.get('content-type') || '').toLowerCase();
       var kind = /^(text\/html|application\/xhtml\+xml)/.test(ct) ? 'html' : /^text\/plain/.test(ct) ? 'text' : '';
@@ -150,7 +180,7 @@
           text = ex.text; title = ex.title; lang = ex.lang || '';
         }
         text = deps.untrusted.sanitizeText(text);
-        if (text.length < MIN_TEXT) return fail('needs JavaScript to show its text');
+        if (text.length < MIN_TEXT) return Object.assign(fail('needs JavaScript to show its text, so it cannot be read from here'), { needs_js: true });
         return Object.assign({ ok: true, text: text, title: deps.untrusted.sanitizeText(title || ''), lang: lang }, base);
       });
     }).catch(function (e) {

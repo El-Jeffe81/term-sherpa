@@ -154,3 +154,19 @@ test('document-type labels', () => {
   assert.deepEqual(TCLinkGroup.userLocale('fr'), { lang: 'fr', region: '' });
   assert.deepEqual(TCLinkGroup.userLocale(undefined), { lang: 'en', region: 'us' });
 });
+
+test('a plain cookie banner with no id/class hint and no fixed position (a banner that is a page of its own inside an iframe) is found', () => {
+  const html = '<html><body><div><p>We use cookies to provide, improve and protect our services. Visit our <a href="https://www.newsco.test/privacy">Privacy Policy</a> and <a href="https://www.newsco.test/privacy-faq">Privacy Policy FAQs</a> to learn more.</p><button>Customize cookies</button><button>Decline</button><button>Accept All</button></div></body></html>';
+  const r = TCConsent.find(parseHtml(html), 'https://www.newsco.test/ccpa_iframe');
+  assert.equal(r.found, true);
+  assert.equal(r.kind, 'banner');
+  assert.deepEqual(r.buttons, ['Accept All']);
+  assert.ok(r.links.some((l) => l.doc_type === 'privacy'));
+});
+
+test('that fallback does not turn a footer of links, or a long article that mentions cookies, into an agree dialog', () => {
+  const footer = '<html><body><div><p>We use cookies. <a href="https://www.newsco.test/privacy">Privacy Policy</a> <a href="https://www.newsco.test/terms">Terms of Service</a></p></div></body></html>';
+  assert.equal(TCConsent.find(parseHtml(footer), BASE).found, false, 'no agree-style button');
+  const article = '<html><body><div><p>' + 'Cookies are small files. '.repeat(80) + 'We use cookies. <a href="https://www.newsco.test/privacy">Privacy Policy</a></p><button>Accept</button></div></body></html>';
+  assert.equal(TCConsent.find(parseHtml(article), BASE).found, false, 'too long to be a banner');
+});

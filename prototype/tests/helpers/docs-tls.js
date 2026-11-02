@@ -4,6 +4,7 @@
 // self-signed certificate (SAN docs.newsco.test). Each test browser maps the name to this server and trusts the certificate
 // for its own throw-away profile only; nothing in the extension is relaxed, it sees a normal https URL.
 // Routes: the newsco documents, a robots.txt that disallows /blocked-by-robots, two redirects (same-site and off-site)
+// the frames fixtures (an agree banner inside an iframe: same-site, and from another site: cmp.newsco.test), a JavaScript-only terms page
 // and a CORS "*" trap page (so a followed redirect would even be readable). Every request is recorded in `hits`.
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,9 +13,10 @@ const https = require('node:https');
 const { spawnSync } = require('node:child_process');
 
 const SITES_DIR = path.join(__dirname, '..', 'fixtures', 'sites');
-const ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.html', '/cookies': 'newsco/cookies.html', '/community-guidelines': 'newsco/community-guidelines.html', '/subscriber-agreement': 'newsco/subscriber-agreement.html' };
+const ROUTES = { '/terms': 'newsco/terms.html', '/privacy': 'newsco/privacy.html', '/cookies': 'newsco/cookies.html', '/community-guidelines': 'newsco/community-guidelines.html', '/subscriber-agreement': 'newsco/subscriber-agreement.html',
+  '/frames/same': 'frames/same.html', '/frames/cross': 'frames/cross.html', '/frames/banner': 'frames/banner.html', '/app/terms': 'frames/js-terms.html' };
 
-function writeExt(file) { fs.writeFileSync(file, 'subjectAltName=DNS:docs.newsco.test\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n'); }
+function writeExt(file) { fs.writeFileSync(file, 'subjectAltName=DNS:docs.newsco.test,DNS:cmp.newsco.test\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n'); }
 
 // Resolves to null when openssl is missing (callers skip the https part).
 async function startDocsTls() {
@@ -38,7 +40,7 @@ async function startDocsTls() {
     if (u === '/redirect-trap') { res.writeHead(200, { 'content-type': 'text/html', 'access-control-allow-origin': '*' }); return res.end('<html><body>trap</body></html>'); }
     const f = u === '/blocked-by-robots' ? 'newsco/terms.html' : ROUTES[u];
     if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f)));
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(SITES_DIR, f), 'utf8').replace(/__PORT__/g, String(server.address().port)));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {

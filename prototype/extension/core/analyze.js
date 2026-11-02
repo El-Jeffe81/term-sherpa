@@ -88,7 +88,8 @@
   }
 
   function matchSentence(rule, s) {
-    for (var e = 0; e < (rule.exclude || []).length; e++) if (rule.exclude[e].test(s)) return null;
+    var plain = s.replace(/[\u2018\u2019\u02bc]/g, "'"); // curly apostrophes ("we don\u2019t sell") must not slip past the "don't" checks
+    for (var e = 0; e < (rule.exclude || []).length; e++) if (rule.exclude[e].test(s) || rule.exclude[e].test(plain)) return null;
     var best = null;
     for (var p = 0; p < rule.patterns.length; p++) {
       var pat = rule.patterns[p], ok = true;
@@ -342,5 +343,13 @@
     return analyzeDocuments([{ text: String(rawText === undefined || rawText === null ? '' : rawText), doc_type: meta.doc_type }], meta);
   }
 
-  return { analyze: analyze, analyzeDocuments: analyzeDocuments, splitSentences: splitSentences, excerpt: excerpt, MAX_QUOTE: MAX_QUOTE };
+  // The rules read English. When a document says it is in another language, say so, so "nothing found" is not read as "nothing there".
+  function languageNote(docs) {
+    var other = (docs || []).filter(function (d) { return d && d.lang && !/^en([-_]|$)/i.test(String(d.lang)); }).length;
+    if (!other) return '';
+    return other === 1 ? ' One document is not in English and my rules read English, so I may have missed things in it.'
+      : ' Some documents are not in English and my rules read English, so I may have missed things in them.';
+  }
+
+  return { analyze: analyze, analyzeDocuments: analyzeDocuments, languageNote: languageNote, splitSentences: splitSentences, excerpt: excerpt, MAX_QUOTE: MAX_QUOTE };
 });

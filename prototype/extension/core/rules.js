@@ -26,6 +26,26 @@
   function r(src) { return new RegExp(src, I); }
 
   var NEG_SELL = r("\\b(do not|does not|don't|doesn't|will not|won't|never|not|no longer)\\s+(\\w+\\s+){0,3}(sell|sale|sold|rent)\\b");
+  // A rule aimed at the USER ("You may not use the API ... for selling users' personal information"): not the company selling anything.
+  // (But "you may not opt out of the sale ..." still counts: those verbs are excluded from the pattern.)
+  var USER_MAY_NOT_SELL = r("\\b(you|users?|customers?)\\s+(may|must|shall|can|will)\\s+not\\b(?!\\s+(opt|object|limit|stop|prevent|refuse|withdraw|restrict|decline)\\b).{0,200}\\b(selling|sell|sale of|sold|renting)\\b");
+  // "In a merger, acquisition or sale of assets, ... personal information is transferred" is not selling data to others.
+  // First form: the sentence never says sell/sold at all. Second: it does, but only as part of that merger / sale-of-assets event
+  // ("We may share, sell, or transfer information about you in connection with a merger ...").
+  var MERGER_WORDS = "(merger|acquisition|bankruptcy|reorgani[sz]ation|sale of (all|substantially|assets|the (business|company)))";
+  var MERGER_ONLY = r("^(?![\\s\\S]*\\b(sell|sells|selling|sold)\\b)[\\s\\S]*\\b" + MERGER_WORDS);
+  var MERGER_EVENT = r("\\b(in connection with|in the event of|as part of|in a|in an|during|upon|if we|if the company)\\s+(\\w+[,]?\\s+){0,4}?" + MERGER_WORDS);
+  // A "your rights" sentence ("You have the right to request that we disclose ... the categories of third parties to whom we sell") describes a request, not a sale;
+  // a verbless heading ("Business purpose of selling or sharing personal information") says nothing; a quoted, defined term ("previously \u201csold\u201d (as defined by ...)") is a note about opt-outs.
+  var RIGHTS_REQUEST = r("\\b(you have the right to|right to request|you may request|you can request|request that we (disclose|tell))\\b");
+  var HEADING_ONLY = r("^(?![\\s\\S]*\\b(we|us|our|they|their|may|can|will|might|have|has|does|do|did|are|is|was|were|be|been|could|would|should|you|your|shall|must)\\b)");
+  // Sharing the USER chose or asked for ("with your consent", "if you decide to share your data", "you can control whether X shares ...") is not the company passing data on by itself;
+  // nor is a disclosure to law enforcement or a court (no advertiser, partner or sale involved).
+  var USER_CHOICE = r("\\b(with your consent|at your direction|you (choose|chose|decide|control)|if you (decide|choose)|you can (control|choose|decide)|depending on your settings|your choice)\\b");
+  var LEGAL_ONLY = r("^(?![\\s\\S]*\\b(sell|sold|advertis\\w*|partners?|marketing|data brokers?)\\b)[\\s\\S]*\\b(law enforcement|legal reasons|legal process|legal obligations?|court orders?|subpoenas?|legal requests?)\\b");
+  // Sentences ABOUT third parties and safeguards (what the policy does not cover, what we require of them, liability for transfers abroad) are not a statement that data is passed on.
+  var SAFEGUARD_NOTE = r("\\b(does not apply|do not apply|we require (them|these|third|such)|same protections|(may be|are|is) liable|not responsible for|outside (of )?the (EU|European|EEA))\\b");
+  var QUOTED_SOLD = r("[\\u201c\"']\\s*(sold|sell|sale)\\s*[\\u201d\"']");
   var NEG_SHARE = r("\\b(do not|does not|don't|doesn't|will not|won't|never)\\s+(\\w+\\s+){0,3}(share|disclose|provide|transfer)\\b.{0,80}\\b(third[- ]part|partners?|advertis)");
   var NOT_THEM = r("\\b(grant|grants|give|gives|granting)\\s+(to\\s+)?(you|users?|the user)\\b");
   var SUBJECT_YOU_CANCEL = r("\\byou\\s+(may|can|are free to|have the right to)\\s+(\\w+\\s+){0,2}(cancel|close|delete|deactivate|terminate|stop)\\b");
@@ -74,11 +94,12 @@
       patterns: [
         { all: [r('\\b(sell|sells|selling|sold|sale of|rent|rents|renting)\\b.{0,80}\\b(personal (data|information)|your (data|information)|user data|information about you|customer data|your details)')], severity: 'High', line: 'They may sell your personal data.' },
         { all: [r('\\b(personal (data|information)|your (data|information)|information about you)\\b.{0,100}\\b(is|are|may be|can be|will be)\\s+(sold|rented)\\b')], severity: 'High', line: 'They may sell your personal data.' },
-        { all: [r('\\b(share|shares|sharing|shared|disclose|discloses|disclosing|provide|provides|transfer|transfers|make available|give|gives)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you|usage data|your details|data about you)\\b.{0,140}\\b(third[- ]part(y|ies)|partners?|advertis\\w+|affiliates?|marketing|data brokers?|analytics providers?)')], severity: 'Medium' },
-        { all: [r('\\b(third[- ]part(y|ies)|advertis\\w+|data brokers?|marketing partners?|business partners?)\\b.{0,140}\\b(personal (data|information)|your (data|information)|information about you)\\b'), r('\\b(share|shared|sharing|disclose|disclosed|provide|provided|access|receive|receives|obtain|use)\\b')], severity: 'Medium' },
+        { all: [r('\\b(share|shares|sharing|shared|disclose|discloses|disclosing|provide|provides|transfer|transfers|make available|give|gives)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you|usage data|your details|data about you)\\b.{0,140}\\b(third[- ]part(y|ies)(?![- ]*(service|vendors?|processors?|contractors?|providers?))|partners?|advertis\\w+|affiliates?|marketing|data brokers?|analytics providers?)')], severity: 'Medium' },
+        { all: [r('\\b(make|makes|made|making)\\s+(certain\\s+|some\\s+)?(of\\s+)?(your\\s+|the\\s+)?(personal (data|information)|your (data|information))\\s+available\\s+to\\s+(\\w+\\s+){0,2}(strategic|business|marketing|advertising)\\s+partners?\\b')], severity: 'Medium' },
+        { all: [r('\\b(third[- ]part(y|ies)|advertisers?|advertising (partners|companies|networks)|data brokers?|marketing partners?|business partners?|strategic partners?)\\b.{0,60}\\b(may|can|will|could)\\s+(\\w+\\s+){0,2}(receive|obtain|access|use)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you)\\b')], severity: 'Medium' },
         { all: [r('\\b(share|shares|sharing|disclose|discloses|disclosing)\\b.{0,100}\\b(personal (data|information)|your (data|information)|information about you)\\b.{0,100}\\b(service providers?|vendors?|processors?|contractors?)\\b')], severity: 'Low', line: 'They share some of your data with companies that help run the service.' }
       ],
-      exclude: [NEG_SELL, NEG_SHARE],
+      exclude: [NEG_SELL, NEG_SHARE, USER_MAY_NOT_SELL, MERGER_ONLY, MERGER_EVENT, RIGHTS_REQUEST, HEADING_ONLY, QUOTED_SOLD, USER_CHOICE, LEGAL_ONLY, SAFEGUARD_NOTE],
       explain: 'The company says it may sell your personal information or pass it to other companies (partners, advertisers, affiliates and similar). Once shared, your data is also handled under those companies\' rules, and it is hard to take back. Sharing with service providers who work for the company (hosting, payments) is usually less of a concern than selling or sharing for advertising.',
       line: 'They may share your data with other companies, such as advertisers or partners.'
     },

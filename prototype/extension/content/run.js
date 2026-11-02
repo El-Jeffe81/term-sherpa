@@ -62,6 +62,28 @@
   var S = TCUntrusted.sanitizeText;
   var isPdf = /^application\/pdf/i.test(document.contentType || '') || /\.pdf$/i.test(location.pathname);
   var result = { ok: true, page: { title: S(document.title || '') }, links: [], extracted: null, consent: { found: false, kind: null, buttons: [], links: [] } };
+  var isTop = true;
+  try { isTop = window.top === window; } catch (e) { isTop = false; }
+  result.page.is_frame = !isTop;
+
+  // Top frame only: which iframes does this page contain that look like a consent box, an overlay or a policy? Only their address and
+  // a yes/no are reported (never their content - a cross-origin frame cannot be read from here anyway). The Explain window compares
+  // this with the frames it was able to read and tells the person about the ones it could not.
+  var FRAME_HINT = /consent|cookie|privacy|gdpr|ccpa|cmp|onetrust|trustarc|truste|didomi|quantcast|usercentrics|sourcepoint|sp[_-]message|cookiebot|terms|agree|policy|legal/i;
+  function describeFrames() {
+    var out = [], fr = document.querySelectorAll('iframe'), i;
+    for (i = 0; i < fr.length && out.length < 20; i++) {
+      var f = fr[i], src = '';
+      try { src = new URL(f.getAttribute('src') || '', location.href).href; } catch (e) { continue; }
+      if (!/^https?:/i.test(src)) continue;
+      var r = f.getBoundingClientRect(), pos = '';
+      try { pos = getComputedStyle(f).position; } catch (e) { /* ignore */ }
+      var big = r.width >= 250 && r.height >= 80;
+      var hint = FRAME_HINT.test([src, f.getAttribute('title'), f.id, f.getAttribute('name'), f.className && String(f.className), f.getAttribute('aria-label')].join(' '));
+      out.push({ src: src, likely: big && (hint || pos === 'fixed') });
+    }
+    return out;
+  }
   try {
     if (isPdf) {
       // Nothing is read from a PDF here; the popup records only that a PDF exists and needs the pdftotext partner.
@@ -77,6 +99,8 @@
     var links = TCDetect.findLegalLinks(TCExtract.collectLinks(tree), location.href);
     var cls = TCDetect.classifyPage({ url: location.href, title: ex.title, h1: ex.h1, textLength: ex.text.length, links: links });
     result.page.url = location.href;
+    if (isTop) result.frames = describeFrames();
+    result.page.thin = !!cls.thin;
     result.page.looks_like_terms = cls.isTerms;
     result.page.is_hub = !!cls.isHub;
     result.page.sensitive = !!cls.sensitive;

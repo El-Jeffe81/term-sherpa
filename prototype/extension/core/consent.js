@@ -162,6 +162,18 @@
         if (c) { c.kind = 'inline'; cands.push(c); }
       });
     }
+    // A banner with no id/class hint and no fixed position (typical when the banner is a page of its own inside an iframe, as on
+    // dropbox.com): accept a SHORT block that says it uses cookies / names the terms, has an agree-style button, and links to a document.
+    if (!cands.length) {
+      walk(tree, function (n) {
+        if (hidden(n)) return false;
+        if (!/^(div|section|aside|form|footer|main|article)$/.test(n.tag)) return;
+        var t = collapse(text(n));
+        if (!t || t.length > 1200 || !LEGAL_PROMPT.test(t)) return;
+        var c = analyzeContainer(n, baseUrl);
+        if (c && c.buttons.length) { c.kind = COOKIE_WORDS.test(t) ? 'banner' : c.kind; cands.push(c); }
+      });
+    }
     if (!cands.length) return res;
     // keep the innermost qualifying containers (an outer wrapper that merely holds an inner one is dropped)
     var inner = cands.filter(function (c) { return !cands.some(function (o) { return o !== c && contains(c.node, o.node); }); });

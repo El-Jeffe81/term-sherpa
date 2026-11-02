@@ -54,7 +54,7 @@ try {
   const prefs = {
     'extensions.webextensions.uuids': JSON.stringify({ [ADDON_ID]: UUID }),
     'extensions.webextOptionalPermissionPrompts': false,
-    'network.dns.localDomains': 'docs.newsco.test',
+    'network.dns.localDomains': 'docs.newsco.test,cmp.newsco.test',
     'network.socket.forcePort': `443=${docsTls.port}`,
     'app.update.enabled': false, 'datareporting.policy.dataSubmissionEnabled': false, 'browser.shell.checkDefaultBrowser': false,
   };
@@ -99,12 +99,12 @@ try {
   const ext1 = await openExtPage('explain/launcher.html');
   const loaded = await exec(`const m = chrome.runtime.getManifest(); return JSON.stringify({ perms: m.permissions, host: m.host_permissions || null, cs: m.content_scripts || null, opt: m.optional_host_permissions, bg: m.background || null, gecko: m.browser_specific_settings.gecko.id, api: [typeof chrome.windows.create, typeof chrome.scripting.executeScript, typeof chrome.permissions.request, typeof chrome.tabs.create] })`);
   const lj = JSON.parse(loaded);
-  assert.deepEqual(lj.perms.slice().sort(), ['activeTab', 'scripting']); assert.deepEqual(lj.host || [], []); assert.deepEqual(lj.cs || [], []); assert.ok(!lj.bg || Object.keys(lj.bg).length === 0, 'no background: ' + JSON.stringify(lj.bg)); // Firefox reports absent lists as []
+  assert.deepEqual(lj.perms.slice().sort(), ['activeTab', 'dns', 'scripting', 'storage']); assert.deepEqual(lj.host || [], []); assert.deepEqual(lj.cs || [], []); assert.ok(!lj.bg || Object.keys(lj.bg).length === 0, 'no background: ' + JSON.stringify(lj.bg)); // Firefox reports absent lists as []
   assert.deepEqual(lj.opt, ['https://*/*']); assert.equal(lj.gecko, ADDON_ID); assert.deepEqual(lj.api, ['function', 'function', 'function', 'function']);
   const granted0 = JSON.parse(await execAsync('return JSON.stringify(await chrome.permissions.getAll())'));
   assert.deepEqual(granted0.origins || [], [], 'no site access at install time');
   assert.match(await text('status'), /./);
-  ok('loaded manifest in Firefox: only activeTab + scripting, no up-front host access, no content_scripts, no background; chrome.* APIs present (promises)');
+  ok('loaded manifest in Firefox: activeTab + scripting + storage (+ Firefox-only dns), no up-front host access, no content_scripts, no background; chrome.* APIs present (promises)');
 
   // (2) without the click the extension cannot touch the news page (activeTab not yet granted)
   const homeTabId = await execAsync(`const me = await chrome.tabs.getCurrent(); const all = await chrome.tabs.query({}); return all.map((t) => t.id).filter((i) => i !== me.id)[0];`);
@@ -127,6 +127,36 @@ try {
   await waitFor('Explain page', async () => (await exec('return location.href')).includes('/explain/explain.html?tab='));
   ok('toolbar action -> popup launcher -> Explain window opened for the news tab (type "popup" window)');
 
+  // (3a) the launcher's "already open" check depends on the extension seeing its own Explain window's address in tabs.query (no tabs permission)
+  { const exUrl = await exec('return location.href'); const exTab = new URL(exUrl).searchParams.get('tab');
+    const seen = await execAsync(`const ts = await chrome.tabs.query({}); const base = chrome.runtime.getURL('explain/explain.html') + '?tab='; return ts.filter((t) => (t.url || '').startsWith(base) && new URL(t.url).searchParams.get('tab') === args[0]).length;`, [exTab]);
+    assert.equal(seen, 1, 'the extension sees its own Explain window in tabs.query');
+    ok('launcher already-open check: the extension sees its own Explain window (explain.html?tab=' + exTab + ') through tabs.query without the tabs permission'); }
+
+  // (3b) first run: the welcome screen comes first (once); the exact disclaimer is always at the bottom; icon in the header
+  const DISCLAIMER = "Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.";
+  const shown = (id) => exec(`const e = document.getElementById(${JSON.stringify(id)}); return !e.hidden && e.getClientRects().length > 0`);
+  await waitFor('welcome screen', async () => await shown('welcome')); assert.equal(await shown('app'), false);
+  assert.equal(await text('disclaimer'), DISCLAIMER);
+  assert.equal(await exec('const i = document.querySelector("header.brand img"); return i.complete && i.naturalWidth'), 48);
+  await exec('document.getElementById("welcome-go").click(); return 1');
+  await waitFor('welcome dismissed', async () => (await shown('app')) && !(await shown('welcome')));
+  assert.equal(await execAsync("return (await chrome.storage.local.get('tc.welcomeSeen'))['tc.welcomeSeen']"), true);
+  ok('first run in Firefox: welcome screen (icon, intro) then Continue stores the marker in storage.local; exact disclaimer shown');
+
+  // (3c) Firefox-only DNS check with the REAL browser.dns.resolve. The test fixture name docs.newsco.test is mapped to 127.0.0.1 by
+  // network.dns.localDomains - exactly the "public-looking name that points at this computer" case the check exists to refuse.
+  const dnsOut = JSON.parse(await execAsync(`const c = TCDnsGuard.fromBrowser(globalThis, TCNetGuard);
+    const r = { present: typeof c, fixture: await c('docs.newsco.test'), localhost: await c('localhost') };
+    // a real public name: only meaningful where DNS gives real answers (some sandboxes answer every name with 198.18.0.1, a reserved address, which the check rightly refuses)
+    try { const a = (await browser.dns.resolve('example.com')).addresses; r.pubAddrs = a; r.pubExpected = a.some((x) => TCNetGuard.isBlockedIp(x)) ? 'refused' : 'allowed'; r.pub = await c('example.com'); } catch (e) { r.pub = 'offline'; }
+    return JSON.stringify(r);`));
+  assert.equal(dnsOut.present, 'function'); assert.match(dnsOut.fixture, /private or internal address/); assert.match(dnsOut.localhost, /private or internal address/); 
+  if (dnsOut.pub !== 'offline') { if (dnsOut.pubExpected === 'allowed') assert.equal(dnsOut.pub, null, 'a real public name is allowed'); else assert.match(dnsOut.pub, /private or internal address/, 'reserved answer (' + dnsOut.pubAddrs + ') refused'); }
+  ok('Firefox DNS check (browser.dns.resolve): names pointing at 127.0.0.1 refused; example.com resolved to ' + dnsOut.pubAddrs + ' -> ' + (dnsOut.pub === null ? 'allowed' : dnsOut.pub === 'offline' ? 'lookup unavailable' : 'refused (reserved address)'));
+  // the rest of this test serves its fixture from a name that resolves to 127.0.0.1, so switch the check off in THIS page only (test harness, not extension code)
+  await exec('TCDnsGuard.fromBrowser = function () { return null; }; return 1');
+
   // (4) the page was read (activeTab was granted by the action); documents wait for the user's click
   const hitsBefore = tlsHits.length;
   await waitFor('permission step', async () => (await exec('return !document.getElementById("perm-go").closest("section").hidden')));
@@ -142,7 +172,7 @@ try {
   catch (e) { console.error('  status text: ' + (await text('status')) + ' | granted: ' + (await execAsync('return JSON.stringify(await chrome.permissions.getAll())')) + ' | hits: ' + JSON.stringify(tlsHits.map((h) => h.url)) + ' | fetch: ' + (await execAsync("try { const r = await fetch('https://docs.newsco.test/robots.txt', {credentials:'omit',redirect:'manual'}); return r.status + ' ' + r.type; } catch (e) { return 'ERR ' + e.message; }"))); throw e; }
   const view = JSON.parse(await exec(`return JSON.stringify({ status: document.getElementById('status').textContent, summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent),
     points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, cls: li.className, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '', open: li.querySelector('details').open, quotes: li.querySelectorAll('blockquote').length })),
-    docs: document.getElementById('docs-count').textContent, pwned: typeof window.__tcPwned, elems: document.querySelectorAll('img, iframe, object, embed, script:not([src])').length })`));
+    docs: document.getElementById('docs-count').textContent, pwned: typeof window.__tcPwned, elems: document.querySelectorAll('#app img, #app iframe, #app object, #app embed, #app script:not([src])').length })`));
   assert.match(view.status, /Read 4 documents\. Nothing was saved\./);
   assert.match(view.summary[0], /: Terms, Privacy, Cookies, Community rules \(from the agree dialog\)\.$/);
   const by = (re) => view.points.find((p) => re.test(p.line));
@@ -187,8 +217,8 @@ try {
   const rd = await run([['https://docs.newsco.test/blocked-by-robots', 'Blocked Policy'], ['https://docs.newsco.test/moved-terms', 'Moved Terms'], ['https://docs.newsco.test/moved-offsite', 'Offsite Terms'], ['http://127.0.0.1:1/internal', 'Internal Policy']]);
   assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 4);
   assert.ok(rd.items.some((t) => /Blocked Policy/.test(t) && /robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /redirects are not followed/.test(t)), JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /redirects are not followed/.test(t)));
+  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t)), JSON.stringify(rd.items));
+  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /this link sends you to another page/.test(t)));
   assert.ok(rd.items.some((t) => /Internal Policy/.test(t) && /link not allowed/.test(t)));
   assert.deepEqual(tlsHits.slice(before2).map((h) => h.url).sort(), ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets never requested; loopback never requested');
   ok('Firefox guarded fetch: robots.txt disallow honoured, same-site and off-site redirects NOT followed (targets never requested), loopback/http link refused; the rest still read');
@@ -210,6 +240,36 @@ try {
     return JSON.stringify({ a: a.status, b: b.status, docs: docs.length, vers: vers.length, after: (await TCDB.listDocs()).length });`));
   assert.deepEqual(idb, { a: 'new', b: 'changed', docs: 1, vers: 2, after: 0 });
   ok('IndexedDB wrapper works in Firefox (versions, change detection, clear)');
+
+  // (9) agree banner inside an iframe, through the real toolbar click (activeTab only, no site access): same-site frame and a frame from another site.
+  // Firefox decides what activeTab covers; whichever it does, the window must either use the banner or say plainly that it could not read the frame.
+  const frameFlow = async (url) => {
+    const h0 = new Set(await handles());
+    await chromeExec('const t = gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); gBrowser.selectedTab = t; return 1', [url]);
+    const nh = await waitFor('new tab', async () => (await handles()).find((x) => !h0.has(x)));
+    await switchTo(nh);
+    await waitFor('frames page', async () => (await exec('return document.readyState')) === 'complete' && (await exec('return location.href')) === url);
+    const before = new Set(await handles());
+    await chromeAsync(`const node = CustomizableUI.getWidget(args[0]).forWindow(window).node; const btn = node.querySelector('.unified-extensions-item-action-button');
+      await window.gUnifiedExtensions.openPanel(null, 'extension_browser_action_popup');
+      btn.dispatchEvent(new window.CustomEvent('command', { bubbles: true, cancelable: true, detail: { openPopupWithoutUserInteraction: false } }));
+      return 1;`, ['term-sherpa_el-jeffe81_github_io-browser-action']);
+    const w = await waitFor('Explain window for frames page', async () => (await handles()).find((x) => !before.has(x)));
+    await switchTo(w);
+    await waitFor('Explain page ready', async () => (await exec('return location.href')).includes('/explain/explain.html?tab='));
+    await waitFor('frames result', async () => !/^Reading the page/.test(await text('status')) && (await text('status')).length > 0);
+    const out = JSON.parse(await exec(`return JSON.stringify({ status: document.getElementById('status').textContent, framesHidden: document.getElementById('frames').hidden, framesText: document.getElementById('frames-text').textContent,
+      permHidden: document.getElementById('permission').hidden })`));
+    return out;
+  };
+  const fSame = await frameFlow('https://docs.newsco.test/frames/same');
+  assert.match(fSame.status, /found the consent banner \(found inside a frame from docs\.newsco\.test\)/, JSON.stringify(fSame));
+  ok('Firefox, real toolbar click: a banner in a same-site iframe is found (activeTab covers same-site frames): ' + fSame.status.slice(0, 80));
+  const fCross = await frameFlow('https://docs.newsco.test/frames/cross');
+  const usedFrame = /found the consent banner \(found inside a frame from cmp\.newsco\.test\)/.test(fCross.status);
+  const saidUnreadable = !fCross.framesHidden && /frame from another site, and I am not allowed to read inside it/.test(fCross.framesText) && /cmp\.newsco\.test/.test(fCross.framesText);
+  assert.ok(usedFrame || saidUnreadable, 'cross-origin frame: either read, or plainly reported - got ' + JSON.stringify(fCross));
+  ok('Firefox, real toolbar click: a banner in a frame from ANOTHER site is ' + (usedFrame ? 'read (activeTab reached the frame)' : 'reported plainly as unreadable, with the allow-that-site button'));
 } catch (e) {
   console.error('FIREFOX E2E FAILED:', e.message);
   console.error(gdLog.split('\n').filter((l) => /error|exception/i.test(l)).slice(-8).join('\n'));

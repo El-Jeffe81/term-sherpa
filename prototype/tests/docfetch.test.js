@@ -25,7 +25,7 @@ function fakeFetch(routes, calls) {
     const bytes = new TextEncoder().encode(body);
     return {
       ok: (r.status || 200) >= 200 && (r.status || 200) < 300, status: r.status || 200, url: r.url || url, type: r.rtype || 'basic', redirected: !!r.redirected,
-      headers: { get: (k) => ({ 'content-type': r.type === undefined ? 'text/html; charset=utf-8' : r.type, 'content-length': r.length }[k.toLowerCase()]) },
+      headers: { get: (k) => ({ 'content-type': r.type === undefined ? 'text/html; charset=utf-8' : r.type, 'content-length': r.length, location: (r.headers || {}).location }[k.toLowerCase()]) },
       body: { getReader() { let done = false; return { read: async () => (done ? { done: true } : ((done = true), { done: false, value: bytes })), cancel() {} }; } }
     };
   };
@@ -137,7 +137,7 @@ test('fetch: time limit - a site that never answers is given up on and the reque
 
 test('fetch: a redirect to a private address, a non-https address, or an error page is not read', async () => {
   const url = 'https://docs.example.test/terms';
-  for (const [final, re] of [['https://169.254.169.254/latest/meta-data', /not allowed/], ['http://docs.example.test/terms', /not allowed|non-https/], ['https://localhost/terms', /not allowed/]]) {
+  for (const [final, re] of [['https://169.254.169.254/latest/meta-data', /not allowed/], ['http://docs.example.test/terms', /not allowed|not https/], ['https://localhost/terms', /not allowed/]]) {
     const r = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { body: page('Terms', LONG), url: final } }, []));
     assert.equal(r.ok, false, final); assert.match(r.reason, re);
   }
@@ -159,12 +159,28 @@ test('fetch: redirects are never followed - the request is redirect:manual and a
   for (const [name, route] of Object.entries(cases)) {
     const r = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: route }, calls));
     assert.equal(r.ok, false, name); assert.equal(r.text, undefined, name);
-    assert.match(r.reason, /another address|redirect/, name); assert.equal(r.url, url, 'the link to show is the document\'s own link');
+    assert.match(r.reason, /sends you to another page/, name); assert.equal(r.redirect, true, name); assert.equal(r.url, url, 'the link to show is the document\'s own link');
   }
   assert.ok(calls.every((c) => c.init.redirect === 'manual'));
   assert.equal(calls.length, 4, 'one request each, no follow-up request to any redirect target');
   const ok = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { body: page('Terms', LONG) } }, []));
   assert.equal(ok.ok, true, 'a normal 200 is unaffected');
+});
+
+test('fetch: a redirect target is shown only when the browser reveals it AND it passes the URL guard; it is never requested', async () => {
+  const url = 'https://docs.example.test/terms';
+  const calls = [];
+  const r = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { status: 301, body: '', headers: { location: 'https://www.example.test/legal/terms' } } }, calls));
+  assert.equal(r.ok, false); assert.equal(r.redirect, true); assert.equal(r.target, 'https://www.example.test/legal/terms');
+  assert.equal(calls.length, 1, 'the target itself is not requested');
+  const rel = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { status: 302, body: '', headers: { location: '/new-terms' } } }, []));
+  assert.equal(rel.target, 'https://docs.example.test/new-terms', 'a relative Location resolves against the document');
+  for (const bad of ['http://www.example.test/t', 'https://169.254.169.254/x', 'https://localhost/t', 'javascript:alert(1)']) {
+    const x = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { status: 302, body: '', headers: { location: bad } } }, []));
+    assert.equal(x.redirect, true, bad); assert.equal(x.target, undefined, 'unsafe target never offered: ' + bad);
+  }
+  const unknown = await TCDocFetch.fetchDoc(doc(url), deps({ [url]: { rtype: 'opaqueredirect', status: 0 } }, []));
+  assert.equal(unknown.redirect, true); assert.equal(unknown.target, undefined, 'an opaque redirect has no known target');
 });
 
 test('fetchAll: a redirected document does not stop the others; the redirect target is never requested', async () => {

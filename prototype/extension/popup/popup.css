@@ -15,3 +15,12 @@ pre { white-space: pre-wrap; max-height: 140px; overflow: auto; background: #f6f
 #status.err { color: #a40000; }
 
 @media (max-width: 420px) { body { width: auto; } } /* opened in a tab on a phone */
+
+/* Small screens and touch: roomy tap targets, no sideways scrolling */
+body { overflow-wrap: anywhere; }
+@media (max-width: 480px), (pointer: coarse) {
+  body { font-size: 16px; }
+  .muted, .url, pre { font-size: 14px; }
+  button, button.primary { min-height: 48px; font-size: 16px; }
+  .row { flex-wrap: wrap; } .row input, .row select { min-width: 0; min-height: 44px; font-size: 16px; }
+}

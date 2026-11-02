@@ -7,13 +7,15 @@ const { firefoxManifest, chromeManifest, merge, zip } = require('../scripts/buil
 const { validatePackages } = require('./validate-manifest');
 const base = require('../extension/manifest.json');
 
-test('firefox manifest = shared manifest + browser_specific_settings only', () => {
+test('firefox manifest = shared manifest + browser_specific_settings + the Firefox-only dns permission', () => {
   const f = firefoxManifest(base);
   assert.equal(f.browser_specific_settings.gecko.id, 'term-sherpa@el-jeffe81.github.io');
   assert.ok(parseInt(f.browser_specific_settings.gecko.strict_min_version, 10) >= 140);
   assert.deepEqual(f.browser_specific_settings.gecko.data_collection_permissions, { required: ['none'] });
   const rest = Object.assign({}, f); delete rest.browser_specific_settings;
+  assert.deepEqual(rest.permissions, [...base.permissions, 'dns']); rest.permissions = base.permissions;
   assert.deepEqual(rest, base);
+  assert.ok(!chromeManifest(base).permissions.includes('dns'), 'Chrome/Edge package has no dns permission');
   assert.equal('browser_specific_settings' in chromeManifest(base), false);
 });
 

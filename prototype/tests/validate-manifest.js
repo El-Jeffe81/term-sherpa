@@ -29,9 +29,10 @@ function validate(EXT, target) {
   ok(!('background' in m), 'no background/service worker needed');
   ok(!('web_accessible_resources' in m), 'no web_accessible_resources');
   ok(!('externally_connectable' in m), 'no externally_connectable');
-  ok(!('permissions' in m) || JSON.stringify([...m.permissions].sort()) === JSON.stringify(['activeTab', 'scripting']), 'permissions must be exactly activeTab + scripting');
+  const wantPerms = target === 'firefox' ? ['activeTab', 'dns', 'scripting', 'storage'] : ['activeTab', 'scripting', 'storage'];
+  ok(JSON.stringify([...(m.permissions || [])].sort()) === JSON.stringify(wantPerms), 'permissions must be exactly ' + wantPerms.join(' + ') + (target === 'firefox' ? ' (dns is Firefox-only: browser.dns.resolve)' : ''));
   ok(!('optional_permissions' in m), 'no optional_permissions');
-  ok(Array.isArray(m.permissions) && m.permissions.includes('activeTab') && m.permissions.includes('scripting'), 'activeTab and scripting required');
+  ok(Array.isArray(m.permissions) && m.permissions.includes('activeTab') && m.permissions.includes('scripting') && m.permissions.includes('storage'), 'activeTab, scripting and storage required');
   ok(m.action && m.action.default_popup, 'action.default_popup required');
   const csp = (m.content_security_policy || {}).extension_pages || '';
   ok(/script-src 'self'/.test(csp) && !/unsafe-eval|unsafe-inline|https?:/.test(csp), "CSP must be script-src 'self' with no unsafe-* or remote sources");
@@ -39,6 +40,9 @@ function validate(EXT, target) {
   // referenced files exist
   const refs = [m.action && m.action.default_popup].filter(Boolean);
   Object.values(m.icons || {}).forEach((f) => refs.push(f));
+  Object.values((m.action && m.action.default_icon) || {}).forEach((f) => refs.push(f));
+  for (const sz of ['16', '32', '48', '96', '128']) ok((m.icons || {})[sz] === 'icons/icon-' + sz + '.png', 'icons.' + sz + ' must be icons/icon-' + sz + '.png');
+  ok(!!(m.action && m.action.default_icon && m.action.default_icon['16'] && m.action.default_icon['32']), 'action.default_icon needs at least 16 and 32');
   for (const f of refs) ok(fs.existsSync(path.join(EXT, f)), 'missing file: ' + f);
 
   // every extension html page (popup launcher, explain window, legacy collection popup): scripts/links are local and exist; no inline scripts
@@ -96,7 +100,9 @@ function validatePackages() {
   // Firefox manifest = shared manifest + overlay only: removing the overlay keys gives the shared manifest back.
   const fm = JSON.parse(fs.readFileSync(path.join(out.firefox.dir, 'manifest.json'), 'utf8'));
   delete fm.browser_specific_settings;
-  if (JSON.stringify(fm) !== JSON.stringify(JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')))) errors.push('firefox manifest differs from the shared manifest by more than browser_specific_settings');
+  if (!fm.permissions.includes('dns')) errors.push('firefox manifest must add the Firefox-only "dns" permission');
+  fm.permissions = fm.permissions.filter((p) => p !== 'dns');
+  if (JSON.stringify(fm) !== JSON.stringify(JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')))) errors.push('firefox manifest differs from the shared manifest by more than browser_specific_settings and the Firefox-only dns permission');
   return errors;
 }
 
@@ -105,5 +111,5 @@ if (require.main === module) {
   const only = process.argv[2] === 'source';
   const errs = validate().concat(only ? [] : validatePackages());
   if (errs.length) { console.error('MANIFEST INVALID:\n- ' + errs.join('\n- ')); process.exit(1); }
-  console.log('manifest OK (MV3; permissions: activeTab, scripting; no content_scripts; no up-front host permissions; optional https://*/* only)' + (only ? '' : '; chrome + firefox packages OK'));
+  console.log('manifest OK (MV3; permissions: activeTab, scripting, storage; no content_scripts; no up-front host permissions; optional https://*/* only)' + (only ? '' : '; chrome + firefox packages OK'));
 }

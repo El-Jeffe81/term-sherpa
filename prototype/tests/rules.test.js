@@ -641,3 +641,61 @@ test('combined: documents are untrusted - hostile text only becomes quotes (plai
   assert.ok(a.injectionHints >= 1, 'the "ignore all previous instructions" sentence is flagged');
   assert.ok(a.findings.every((f) => typeof f.line === 'string' && f.line.length < 120));
 });
+
+test('languageNote: only documents that say they are not English get the note', () => {
+  const A = require('../extension/core/analyze');
+  assert.equal(A.languageNote([{ lang: 'en' }, { lang: 'en-GB' }, { lang: '' }, {}]), '');
+  assert.match(A.languageNote([{ lang: 'fr' }]), /^ One document is not in English/);
+  assert.match(A.languageNote([{ lang: 'fr' }, { lang: 'de-DE' }]), /^ Some documents are not in English/);
+  assert.equal(A.languageNote(undefined), '');
+});
+
+test('data_sharing: a rule aimed at the user ("you may not use the API for selling users\' personal information") is not the company selling data; real sale clauses still are', () => {
+  const has = (t) => require('../extension/core/analyze').analyze(t, {}).findings.some((f) => f.id === 'data_sharing');
+  assert.equal(has("You may not use the API to download data or Content from GitHub for spamming purposes, including for the purposes of selling GitHub users' personal information, such as to recruiters, headhunters, and job boards."), false);
+  assert.equal(has('Users must not sell the personal information of other users.'), false);
+  assert.equal(has('We do not sell your personal information.'), false);
+  assert.equal(has('We may sell your personal information to other companies.'), true);
+  assert.equal(has('You agree that we may sell your personal information to partners.'), true);
+  assert.equal(has('You may not opt out of the sale of your personal information.'), true);
+  assert.equal(has('If Google is involved in a merger, acquisition, or sale of assets, we will continue to ensure the confidentiality of your personal information.'), false, 'a sale of assets is not selling your data');
+  assert.equal(has('In a merger we may sell your personal information to the buyer.'), false, 'a transfer to the buyer in a merger is not selling data to others');
+  assert.equal(has('We may sell your personal information to partners. In a merger we may transfer it to the buyer.'), true, 'a real sale sentence next to a merger sentence still counts');
+});
+
+test('data_sharing evidence: a denial is never shown as the quote (straight or curly apostrophe); no other evidence means no risk', () => {
+  const A = require('../extension/core/analyze');
+  const quotes = (t) => { const f = A.analyze(t, {}).findings.find((x) => x.id === 'data_sharing'); return f ? f.evidence.map((e) => e.quote) : null; };
+  for (const denial of ["And no, we don\u2019t sell your personal information.", "And no, we don't sell your personal information.", 'We never sell or rent your personal data.', 'We do not sell your personal information to third parties.', 'X does not share your personal information with advertisers or partners.']) {
+    assert.equal(quotes(denial), null, 'no risk from: ' + denial);
+  }
+  // a real clause elsewhere in the same text is kept, the denial next to it is not quoted
+  const q = quotes("And no, we don\u2019t sell your personal information. We may sell your personal information to advertising partners. We do not sell data of children.");
+  assert.deepEqual(q, ['We may sell your personal information to advertising partners.']);
+});
+
+test('data_sharing evidence: rights notes, headings, quoted defined terms and merger events are not "they sell your data" (Netflix / X privacy wording)', () => {
+  const A = require('../extension/core/analyze');
+  const f = (t) => A.analyze(t, {}).findings.find((x) => x.id === 'data_sharing') || null;
+  assert.equal(f('Business purpose of selling or sharing personal information'), null, 'a heading');
+  assert.equal(f('You have the right to request that we disclose: the categories of third parties to whom we disclose, sell, or share personal information; and the categories of personal information we have disclosed, sold, or shared about you for a business or commercial purpose.'), null, 'a "right to request" note');
+  assert.equal(f('Using these choices will not opt you out of the use of previously \u201csold\u201d (as defined by some US State Privacy Laws) personal information, or stop all Behavioral Advertising.'), null, 'a quoted, defined term');
+  assert.equal(f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy.'), null, 'a merger event');
+  // the X privacy wording as a whole: a merger event, a denial and a user-controlled option leave nothing to quote, so no risk is raised
+  assert.equal(f('We may share, sell, or transfer information about you in connection with a merger, acquisition, reorganization, sale of assets, or bankruptcy. And no, we don\u2019t sell your personal information. You can control whether X shares your personal information with these partners by using the \u201cData sharing with business partners\u201d option in your Privacy and Safety settings.'), null);
+  assert.equal(f('We share or disclose your information with your consent or at your direction, such as when you authorize a third-party web client or application to access your account.'), null, 'sharing the user chose');
+  assert.equal(f('Depending on your settings, or if you decide to share your data, we may share or disclose your information with third parties.'), null, 'sharing the user chose');
+  assert.equal(f('Other people with whom you choose to share your information, like docs or photos, videos or comments on YouTube.'), null, 'user-chosen sharing');
+  assert.equal(f('Law enforcement or other third parties, for the legal reasons described in Sharing your information.'), null, 'a legal disclosure');
+  assert.equal(f('Data transfer: You can request that we share your data directly with a third-party provider, provided this is technically possible.'), null, 'a user request');
+  assert.notEqual(f('We may share your personal information with advertising partners for legal reasons and marketing, unless you opt out.'), null, 'advertisers/partners still count');
+  assert.notEqual(f('We may disclose certain personal information to Advertising Companies in order to select advertisements shown on the service.'), null, 'a real advertiser disclosure still counts');
+  assert.equal(f('Apple\u2019s Privacy Policy does not apply to how third parties define personal data or how they use it.'), null, 'a note about third parties, not a disclosure');
+  assert.equal(f('If data will be shared with a third party, we require them to maintain the same protections over your data that we provide directly.'), null, 'a safeguard note');
+  assert.equal(f('Under certain circumstances, participants may be liable for the transfer of personal data from the EU, Switzerland and the UK to third parties outside the EU, Switzerland and the UK.'), null, 'a liability note');
+  { const sp = f('We may disclose your personal information to third-party service providers who perform tasks on our behalf.'); assert.ok(sp); assert.equal(sp.severity, 'Low', 'service providers are the lower-severity case'); }
+  assert.notEqual(f('Advertisers and other third parties may receive your personal information when you use the service.'), null, 'third parties receiving data still counts');
+  assert.equal(f('Advertising Companies: We may collect advertising information about you from other sources to support advertisements.'), null, 'collecting from advertisers is not sharing with them');
+  assert.notEqual(f('At times, Apple may make certain personal data available to strategic partners that work with Apple to provide products and services, or that help Apple market to customers.'), null, 'real partner sharing (Apple wording) still counts');
+  assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
+});

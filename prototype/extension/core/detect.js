@@ -28,7 +28,7 @@
     ['eula', /\/(eula|end-user-licen[sc]e[a-z-]*|licen[sc]e-agreement)(\/|\.html?|\.pdf|$)/i],
     ['cookies', /\/cookies?([-_](policy|notice|statement|settings))?(\/|\.html?|\.pdf|$)/i],
     ['privacy', /\/(privacy([-_](policy|notice|statement|center|centre))?|privacypolicy|data-protection|datenschutz)(\/|\.html?|\.pdf|$)/i],
-    ['tos', /\/(terms([-_](of[-_](service|use|sale)|and[-_]conditions|conditions))?|tos|tnc|t-and-c|conditions(-of-use)?|user-agreement|terms_of_service|termsofservice|termsofuse)(\/|\.html?|\.pdf|$)/i],
+    ['tos', /\/(terms([-_](of[-_](service|use|sale)|and[-_]conditions|conditions))?|tos|tnc|t-and-c|conditions(-of-use)?|user-agreement|terms_of_service|termsofservice|termsofuse|services?-?agreement)(\/|\.html?|\.pdf|$)/i],
     ['other', /\/(legal|imprint|legal-notice)(\/|\.html?|\.pdf|$)/i]
   ];
 
@@ -104,14 +104,29 @@
     ['eula', /\beula\b|end[-\s]?user licen[sc]e|licen[sc]e agreement/i],
     ['cookies', /cookie (policy|notice|statement)|use of cookies/i],
     ['privacy', /privacy (policy|notice|statement)|data protection (policy|notice)|privacy and cookie/i],
-    ['tos', /terms (of (service|use|sale)|and conditions|& conditions)|terms ?& ?conditions|conditions of use|user agreement|\bterms$/i]
+    ['tos', /terms (of (service|use|sale)|and conditions|& conditions)|terms ?& ?conditions|conditions of use|user agreement|(services?|customer|subscriber|master) agreement|\bterms$/i]
   ];
 
   // Links into news/blog-style sections are articles ABOUT privacy/terms, not the documents.
   var NEGATIVE_PATH = /\/(news|blog|blogs|article|articles|press|posts?|stories|story|events?|careers?|jobs)\//i;
 
+  // The page itself (not a link) sits in an encyclopedia/news/blog-style place, or has a headline instead of a document title:
+  // an ARTICLE ABOUT terms ("Instagram changes its Terms of Service", Wikipedia's "Terms of service"), not the terms.
+  var ARTICLE_PATH = /(^|\/)(wiki|news|blog|blogs|press|posts?|stories|story|magazine)(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  // ...unless the address ends in a plain legal page name ("/news/terms", "/press/privacy-policy"): that is the site's own terms page.
+  // (Never for wiki or dated addresses, where the same words name an article.)
+  var ARTICLE_STRICT = /(^|\/)wiki(\/|$)|\/(19|20)\d\d\/\d{1,2}(\/|$)/i;
+  var LEGAL_LEAF = /\/(terms|terms-(of|and)-(service|use|conditions?)|terms-conditions|tos|privacy|privacy-(policy|notice|statement)|cookies?|cookie-(policy|notice)|legal)\/?$/i;
+  function articlePath(p) { return ARTICLE_PATH.test(p) && (ARTICLE_STRICT.test(p) || !LEGAL_LEAF.test(p)); }
+  var MAX_TITLE_WORDS = 9;
+  function headlineLike(s) {
+    var first = String(s || '').split(/\s[-\u2013\u2014|:\u00b7]\s/)[0].trim();
+    return first.split(/\s+/).filter(Boolean).length > MAX_TITLE_WORDS;
+  }
+
   var MIN_TEXT_FOR_PATH_MATCH = 500;
   var MIN_TEXT_FOR_TITLE_MATCH = 1500;
+  var THIN_TITLE_TEXT = 300;
 
   function pathOf(u) { try { return new URL(u).pathname.replace(/\/+$/, '').toLowerCase() || '/'; } catch (e) { return ''; } }
 
@@ -247,18 +262,23 @@
         if (TEXT_I18N[ti][1] !== 'other' && TEXT_I18N[ti][2].test(info.h1 || '') && /(^|\s)(pol[i\u00ed]tica|aviso|t[e\u00e9]rminos|condiciones|conditions|politique|nutzungsbedingungen|datenschutz|termos|termini|informativa|privacidade|confidentialit)/i.test(info.h1 || '')) { byTitle = TEXT_I18N[ti][1]; break; }
       }
     }
+    if (articlePath(p)) { byPath = null; byTitle = null; }
+    else if (byTitle && headlineLike(info.h1 || '') && headlineLike(info.title || '')) byTitle = null;
     var len = info.textLength || 0;
     var sensitive = isSensitivePage(info.url);
-    if (sensitive) return { isTerms: false, isHub: false, sensitive: true, doc_type: null, reasons: ['sensitive-looking page (account, checkout, payment...): never read as a document'] };
-    if (info.links && isLegalHub(info, info.links)) return { isTerms: false, isHub: true, sensitive: sensitive, doc_type: null, reasons: ['legal hub: lists ' + info.links.length + ' legal documents'] };
+    if (sensitive) return { isTerms: false, isHub: false, thin: false, sensitive: true, doc_type: null, reasons: ['sensitive-looking page (account, checkout, payment...): never read as a document'] };
+    if (info.links && isLegalHub(info, info.links)) return { isTerms: false, isHub: true, thin: false, sensitive: sensitive, doc_type: null, reasons: ['legal hub: lists ' + info.links.length + ' legal documents'] };
     if (byPath && len >= MIN_TEXT_FOR_PATH_MATCH) {
       reasons.push('url path');
-      return { isTerms: true, isHub: false, sensitive: sensitive, doc_type: byTitle && byTitle !== byPath && byPath === 'other' ? byTitle : byPath, reasons: reasons.concat(byTitle ? ['title'] : []) };
+      return { isTerms: true, isHub: false, thin: false, sensitive: sensitive, doc_type: byTitle && byTitle !== byPath && byPath === 'other' ? byTitle : byPath, reasons: reasons.concat(byTitle ? ['title'] : []) };
     }
     if (byTitle && len >= MIN_TEXT_FOR_TITLE_MATCH) {
-      return { isTerms: true, isHub: false, sensitive: sensitive, doc_type: byTitle, reasons: ['title/heading'] };
+      return { isTerms: true, isHub: false, thin: false, sensitive: sensitive, doc_type: byTitle, reasons: ['title/heading'] };
     }
-    return { isTerms: false, isHub: false, sensitive: sensitive, doc_type: null, reasons: [] };
+    // The address or title says "terms"/"privacy" but there is hardly any text: the page probably builds its text with JavaScript
+    // (or it is still loading, or the text is behind a button). Not read as terms, but the window can say so plainly.
+    var thin = !!((byPath && len < MIN_TEXT_FOR_PATH_MATCH) || (byTitle && len < THIN_TITLE_TEXT));
+    return { isTerms: false, isHub: false, sensitive: sensitive, thin: thin, doc_type: null, reasons: thin ? ['looks like a legal page but has very little text'] : [] };
   }
 
   return {

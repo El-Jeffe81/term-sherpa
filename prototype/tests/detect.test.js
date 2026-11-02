@@ -74,3 +74,41 @@ test('fixture: page with no legal links yields an empty list (popup then asks fo
   const tree = parseHtml(read('nolinks/index.html'));
   assert.deepEqual(D.findLegalLinks(E.collectLinks(tree), 'https://plain.test/'), []);
 });
+
+test('classifyPage: a page that looks like terms but has almost no text is flagged "thin" (JavaScript-built or still loading), not read as terms', () => {
+  const a = D.classifyPage({ url: 'https://a.test/terms', title: 'Terms', h1: '', textLength: 80 });
+  assert.equal(a.isTerms, false); assert.equal(a.thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/privacy-policy', title: '', h1: '', textLength: 400 }).thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/page', title: 'Privacy Policy | A', h1: '', textLength: 120 }).thin, true);
+  assert.equal(D.classifyPage({ url: 'https://a.test/terms', title: '', h1: '', textLength: 900 }).thin, false, 'enough text: read as terms');
+  assert.equal(D.classifyPage({ url: 'https://a.test/about', title: 'About us', h1: '', textLength: 50 }).thin, false, 'an ordinary short page is not "thin terms"');
+  assert.equal(D.classifyPage({ url: 'https://a.test/account/billing', title: 'Terms', h1: '', textLength: 50 }).thin, false, 'sensitive pages are never flagged');
+});
+
+test('classifyPage: an article ABOUT terms (encyclopedia, news, dated or headline-style) is not read as the terms; real documents still are', () => {
+  assert.equal(D.classifyPage({ url: 'https://en.wikipedia.org/wiki/Terms_of_service', title: 'Terms of service - Wikipedia', h1: 'Terms of service', textLength: 17000 }).isTerms, false);
+  assert.equal(D.classifyPage({ url: 'https://en.wikipedia.org/wiki/Privacy_policy', title: 'Privacy policy - Wikipedia', h1: 'Privacy policy', textLength: 17000 }).isTerms, false);
+  assert.equal(D.classifyPage({ url: 'https://news.test/2026/10/30/app-changes-terms-of-service', title: 'App changes its Terms of Service', h1: 'App changes its Terms of Service', textLength: 6000 }).isTerms, false, 'dated news address');
+  assert.equal(D.classifyPage({ url: 'https://news.test/tech/app-update', title: 'Why the social network quietly rewrote its terms of service again this week | News', h1: 'Why the social network quietly rewrote its terms of service again this week', textLength: 6000 }).isTerms, false, 'headline-style title');
+  assert.equal(D.classifyPage({ url: 'https://a.test/legal/terms', title: 'Terms of Service | Acme', h1: 'Terms of Service', textLength: 6000 }).doc_type, 'tos');
+  assert.equal(D.classifyPage({ url: 'https://a.test/page', title: 'Terms and Conditions of Use and Sale for Customers - Acme', h1: '', textLength: 6000 }).doc_type, 'tos', 'a long first segment is fine below the headline limit');
+});
+
+test('classifyPage: "Services Agreement" style documents (Microsoft) are recognised by title and by address', () => {
+  assert.equal(D.classifyPage({ url: 'https://www.microsoft.com/en-us/servicesagreement', title: 'Microsoft Services Agreement', h1: '', textLength: 114000 }).doc_type, 'tos');
+  assert.equal(D.classifyPage({ url: 'https://a.test/page', title: 'Customer Agreement', h1: '', textLength: 4000 }).doc_type, 'tos');
+  assert.equal(D.classifyPage({ url: 'https://a.test/legal/service-agreement', title: '', h1: '', textLength: 4000 }).doc_type, 'tos');
+});
+
+test('classifyPage: a help-centre article that IS the terms (Airbnb /help/article/2908) is still read as terms', () => {
+  assert.equal(D.classifyPage({ url: 'https://www.airbnb.com/help/article/2908', title: 'Terms of Service - Airbnb Help Center', h1: 'Terms of Service', textLength: 30000 }).doc_type, 'tos');
+});
+
+test('a news/blog site\'s own terms page (address ends in a plain legal name) is still read as terms; articles about terms are not', () => {
+  const t = (url, title, h1) => D.classifyPage({ url, title, h1, textLength: 6000 }).isTerms;
+  assert.equal(t('https://example.org/news/terms', 'Terms of Service', 'Terms of Service'), true);
+  assert.equal(t('https://example.org/press/privacy-policy', 'Privacy Policy', 'Privacy Policy'), true);
+  assert.equal(t('https://example.org/blog/terms-of-service-update', 'We updated terms', 'We updated terms'), false);
+  assert.equal(t('https://example.org/2024/05/terms', 'Terms', 'Terms'), false);
+  assert.equal(t('https://en.wikipedia.org/wiki/Terms', 'Terms', 'Terms'), false);
+});

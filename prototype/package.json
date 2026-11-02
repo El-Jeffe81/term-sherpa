@@ -1,9 +1,9 @@
 {
-  "name": "tc-prototype",
-  "version": "0.1.0",
-  "description": "Local proof of concept: collect terms/privacy/EULA/cookie text into a local dataset (Chrome MV3 extension + Node CLI). Product name: Term Sherpa.",
+  "name": "term-sherpa",
+  "version": "1.0.0",
+  "description": "Term Sherpa: a free browser extension (Chrome-family MV3 + Firefox desktop/Android) that explains terms of service, privacy policies and 'I agree' banners in plain English, on-device.",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-only",
   "engines": {
     "node": ">=22.13"
   },
@@ -13,13 +13,15 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:e2e": "node tests/e2e/chrome-smoke.mjs",
+    "test:real": "node tests/e2e/real-sites.mjs",
     "test:e2e:firefox": "node tests/e2e/firefox-smoke.mjs",
     "validate": "node tests/validate-manifest.js",
     "build": "node scripts/build.js",
     "build:chrome": "node scripts/build.js chrome",
     "build:firefox": "node scripts/build.js firefox",
     "lint:firefox": "npx --yes web-ext@10.8.0 lint -s dist/firefox",
-    "probe:dnr": "node tests/e2e/dnr-probe.mjs"
+    "probe:dnr": "node tests/e2e/dnr-probe.mjs",
+    "probe:warnings": "node tests/e2e/warnings-probe.mjs"
   },
   "dependencies": {},
   "devDependencies": {}
