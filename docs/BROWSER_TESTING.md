@@ -38,7 +38,7 @@ Both e2e scripts skip themselves (exit 0, "SKIP") if the browser is not found. T
 ### Chromium-family e2e (`tests/e2e/chrome-smoke.mjs`)
 Drives the browser over the DevTools protocol on a pipe (`--remote-debugging-pipe`), loads the **unpacked source folder** with
 `Extensions.loadUnpacked`, opens a fixture news page with an "Agree" dialog, and checks 45 things (first-run screen, disclaimer line, icons, "nothing found" wording, consent boxes inside iframes, a 360 px phone layout, and the list below): the injected page scripts, the
-permission step, the guarded fetch (https only, no cookies, no Referer, robots.txt, redirects not followed, loopback refused), the
+permission step, the guarded fetch (https only, no cookies, no Referer, no robots.txt request, redirects followed with the final URL vetted in all-sites mode and refused with a "Read it" button in per-site mode, 8 MB read cap, loopback refused), the
 combined explanation, the hostile document (script / `onerror` / injected instructions stay inert), opt-in storage, removal of granted access.
 `docs.newsco.test` is mapped to the local https server inside the throw-away profile only (`--host-resolver-rules`, `--ignore-certificate-errors`).
 
@@ -82,7 +82,7 @@ Firefox resolves a bare path against the calling page (`explain/` or `popup/`), 
 ## Firefox-only DNS check (permission `dns`)
 Firefox lets an extension ask the browser to resolve a host name (`browser.dns.resolve`, permission `dns`). Term Sherpa uses it, in Firefox only, to refuse a
 document host whose name resolves to a private, loopback, link-local or otherwise non-public address, before any request is sent (`extension/core/dnsguard.js`).
-Chrome and Edge have no such API, so there the check is absent and Chrome keeps its previous behavior: only the static address check (https only, names that look local, IP literals refused, no redirects followed) applies.
+Chrome and Edge have no such API, so there the check is absent and Chrome keeps its previous behavior: only the static address check (https only, names that look local, IP literals refused, and the final URL after a redirect checked the same way before the body is read) applies.
 **Known limit (DNS rebinding):** the name is resolved just before the request and the browser resolves it again for the request, so a DNS server that changes its answer in between is not covered. It is a safety net, not a guarantee. The per-site permission prompt remains the main barrier.
 The Firefox e2e checks it with `network.dns.localDomains` (the fixture name resolves to loopback and is refused with the plain-words message).
 
@@ -98,7 +98,7 @@ Many "I agree" boxes live in an iframe. The Explain window injects the page read
 - Firefox 159, measured with a real toolbar click and `activeTab` only: a frame from the **same site** is read; a frame from **another site is not**. The window then says so in plain words and offers "Allow that site and look again", which asks for that one site.
 
 ## Redirects and JavaScript-only pages
-A linked document that redirects is not followed (nothing is requested from an address that was not vetted); the window says "This link sends you to another page. Open it and run Term Sherpa there." and shows the link.
+A linked document that redirects is followed only when the final host is one the user allowed or when all-sites access is on (opt-in screen "Read policies wherever they're hosted"). The final URL must be https and pass the address checks, or the answer is discarded unread. Otherwise the window says "<Label> wasn't read. Its link goes to another site, which Term Sherpa doesn't follow yet. Open it and click Term Sherpa there." with a "Read it" button. Known limit: the browser sends one cookie-less GET to the redirect target even then; see `prototype/docs/SECURITY.md`.
 A document that has fewer than 200 characters of text after it is loaded without scripts is reported as "This page only shows its text after it runs JavaScript..." with its link. The e2e covers both.
 
 ## Real-site check (`npm run test:real`)
@@ -112,7 +112,7 @@ Not an extension problem: the Guardian and BBC front pages showed no cookie bann
 
 ## NOT tested (so nobody assumes it was)
 - **A human clicking the toolbar icon** in any browser, and the **real permission prompt** the browser shows for the site. Headless Chromium
-  cannot answer that prompt (the Chrome e2e checks the permission step, then runs the full flow on a temporary copy of the extension whose only change is that the same `https://*/*` is granted up front); in Firefox the prompt is auto-answered by a pref.
+  cannot answer that prompt (the Chrome e2e checks the permission step, then runs the full flow on a temporary copy of the extension whose only change is that the same `https://*/*` is granted up front, so the per-site and all-sites modes are two separate throw-away copies and the permission calls are stubbed); in Firefox the prompt is auto-answered by a pref.
   Needs one manual run per browser family in a normal, visible window.
 - **Firefox for Android**: cannot run on this box. See `FIREFOX_ANDROID.md` (code and documentation review only).
 - **Windows and macOS** builds of any browser. Everything ran on Linux x86-64.

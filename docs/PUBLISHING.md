@@ -103,7 +103,7 @@ Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and ca
 - `activeTab`: reads the page the user is on, only after they click the Term Sherpa button.
 - `scripting`: runs the page reader on that tab after the click. There are no always-on content scripts.
 - `storage`: keeps the "first-run screen seen" flag and the user's options on the device. Saved copies are opt-in and stay on the device.
-- Optional host permission `https://*/*`: requested per site at click time, so Term Sherpa can fetch the documents an "I agree" box links to (usually on another host). Not granted at install. Requests are https only, send no cookies or referrer, refuse private and local addresses, do not follow redirects, and respect `robots.txt`. The user can remove the access in Options.
+- Optional host permission `https://*/*`: requested at click time, per site or (after an explicit in-extension opt-in screen) for all sites, so Term Sherpa can fetch the documents an "I agree" box links to (often on another host, such as a separate privacy site). Not granted at install and used only for reads the user starts. Requests are https only, send no cookies, Referer or scripts, refuse private and local addresses (checked on the final URL after any redirect, before the body is read), read at most 8 MB per page, and do not check `robots.txt`. The user can turn the access off and on in Options.
 - `dns` (Firefox only): resolves the link's host name to refuse names that point at private or local addresses before fetching (guards against a public name pointing inside the user's network). The result is not stored or sent anywhere.
 - Data collection: none (`data_collection_permissions` = none). Nothing is sent to the author or to any third party.
 

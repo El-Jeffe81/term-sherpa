@@ -24,7 +24,15 @@
   <div id="app">
   <div id="status" role="status" aria-live="polite">Reading the page...</div>
 
+  <!-- shown the first time a policy link leaves the site, BEFORE the browser's own prompt -->
+  <section id="optin" hidden aria-labelledby="optin-head">
+    <h2 id="optin-head">Read policies wherever they're hosted</h2>
+    <p id="optin-text">Chrome will say 'read and change all your data on all websites.' Term Sherpa only reads legal pages you ask about, saves nothing, and never runs their code.</p>
+    <p class="row"><button id="optin-go" class="primary">Allow all sites</button> <button id="optin-no">Not now</button></p>
+  </section>
+
   <main id="result" hidden>
+    <ul id="read-from" class="readfrom" hidden></ul>
     <!-- (a) Summary: site, service type, overall read -->
     <section id="overview" aria-labelledby="h-summary">
       <h2 id="h-summary">Summary</h2>
@@ -50,9 +58,15 @@
 
   <!-- (c) Any document that could not be read: amber notice with the plain reason -->
   <section id="unread" class="amber" role="alert" hidden aria-labelledby="unread-head">
-    <h2 id="unread-head">A document could not be read</h2>
+    <h2 id="unread-head">1 document couldn't be read</h2>
     <p id="unread-lead"></p>
     <ul id="unread-list" class="plain"></ul>
+  </section>
+
+  <!-- a document that was only partly read (the first 8 MB) -->
+  <section id="partial" class="amber" role="status" hidden aria-labelledby="partial-head">
+    <h2 id="partial-head">Only part of this document was read.</h2>
+    <ul id="partial-list" class="plain"></ul>
   </section>
 
   <section id="frames" hidden>
@@ -96,6 +110,8 @@
     <label class="opt"><input type="checkbox" id="save-copies"> Also save a copy of the terms on this device (off by default)</label>
     <p class="muted">By default nothing about the terms is stored: the text is read, explained, and forgotten when you close this window. If you turn this on, each terms page you explain is also saved in this extension's local database on this device (never uploaded), where the older "saved copies" list can show, export or delete it.</p>
     <p class="muted">When you ask me to read the documents an "I agree" dialog links to, your browser asks once per site for access. Nothing is allowed up front.</p>
+    <label class="opt"><input type="checkbox" id="all-sites"> Read policies wherever they're hosted (all sites)</label>
+    <p class="muted">Off by default. When a policy link leaves the site (for example a privacy link that goes to a separate policy site), your browser can let me read it there. It only applies to pages you ask me to read, never runs their code, sends no cookies and saves nothing. Turn it off at any time: that removes the access again.</p>
     <p><button id="revoke">Remove the site access I have allowed</button></p>
     <p><a id="saved-link" href="../popup/popup.html" target="_blank" rel="noopener">Open saved copies (advanced)</a></p>
   </details>
@@ -111,6 +127,8 @@
   <script src="../core/extract.js"></script>
   <script src="../core/detect.js"></script>
   <script src="../core/linkgroup.js"></script>
+  <script src="../core/psl-data.js"></script>
+  <script src="../core/psl.js"></script>
   <script src="../core/docfetch.js"></script>
   <script src="domparse.js"></script>
   <script src="../core/quote.js"></script>

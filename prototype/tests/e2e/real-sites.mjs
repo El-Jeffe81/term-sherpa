@@ -2,7 +2,7 @@
 // Run: npm run test:real            (all pages)       TC_REAL_ONLY=google,apple npm run test:real   (name filter)
 // Output: $TC_REAL_OUT (default /workspace/real-sites): results.json, results.md and one explain-window screenshot per page.
 // Same approach as chrome-smoke.mjs: headless Chrome over the DevTools pipe, a throw-away copy of the built extension whose ONLY change is that
-// https://*/* is granted up front (headless Chrome cannot show the permission prompt or grant activeTab), and the REAL explain window opened for each tab.
+// all-sites access is granted up front (the all-sites mode; the per-site mode is covered by chrome-smoke.mjs) (headless Chrome cannot show the permission prompt or grant activeTab), and the REAL explain window opened for each tab.
 // A site that blocks us or times out is recorded, not a failure. Exit code is 1 only for a crash in our own code (an extension exception).
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -48,7 +48,7 @@ export const SITES = [
   // v1.1 live checks: a news home page whose footer links to Terms and Privacy (one of them leaves the site), and a plain same-site policy
   { name: 'cnn-home', kind: 'news site home: footer links to Terms of Use and Privacy', url: 'https://www.cnn.com/', expect: 'banner', click: ['Terms of Use', 'Privacy Policy'] },
   { name: 'cnn-terms', kind: 'news terms page', url: 'https://www.cnn.com/terms', expect: 'explained' },
-  { name: 'cnn-privacy', kind: 'news privacy link that leaves the site (cross-domain redirect)', url: 'https://www.cnn.com/privacy', expect: 'explained' },
+  { name: 'cnn-privacy', kind: 'news privacy link that leaves the site (cross-domain redirect)', url: 'https://www.cnn.com/privacy', expect: 'explained', click: ['Terms of Use'] },
   { name: 'bbc-terms', kind: 'normal same-site terms (a hub: click "Explain this" on its documents)', url: 'https://www.bbc.co.uk/usingthebbc/terms', expect: 'explained', click: ['Terms of Use', 'Privacy Policy'] },
   { name: 'wikipedia-tos-article', kind: 'NOT a terms page (article about terms)', url: 'https://en.wikipedia.org/wiki/Terms_of_service', expect: 'none' },
   { name: 'example-com', kind: 'NOT a terms page (control)', url: 'https://example.com/', expect: 'none' }
@@ -126,9 +126,9 @@ try {
         quotes: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent) })),
         also: [...document.querySelectorAll('#also-list li.point')].map((li) => li.querySelector('.line .text').textContent),
         nothingFound: !document.getElementById('nothing-found').hidden, framesNote: !document.getElementById('frames').hidden, permission: !document.getElementById('permission').hidden,
-        docs: [...document.querySelectorAll('details.docs li')].map((n) => n.textContent.slice(0, 160)), visibleLen: document.getElementById('result').innerText.length })`));
+        readFrom: document.getElementById('read-from').hidden ? null : document.getElementById('read-from').innerText, partial: document.getElementById('partial').hidden ? null : document.getElementById('partial').innerText, optinShown: !document.getElementById('optin').hidden, hostedElsewhere: [...document.querySelectorAll('#read-from .hosted-note')].map((n) => n.textContent), docs: [...document.querySelectorAll('details.docs li')].map((n) => n.textContent.slice(0, 160)), visibleLen: document.getElementById('result').innerText.length })`));
       Object.assign(row, { quotes: out.quotes, status: out.status, statusErr: out.err, explained: !out.resultHidden, summary: out.summary, risks: out.risks, also: out.also, riskCount: out.risks.length + out.also.length, highCount: out.risks.filter((r) => /^High/.test(r)).length,
-        nothingFound: out.nothingFound, framesNote: out.framesNote, docs: out.docs });
+        nothingFound: out.nothingFound, framesNote: out.framesNote, docs: out.docs, readFrom: out.readFrom, partial: out.partial, hostedElsewhere: out.hostedElsewhere, optinShown: out.optinShown });
       // 2b) v1.1 live check: press "Explain this" on named candidates, exactly as a person would, and record what the window shows each time
       if (site.click) {
         row.clicks = [];
@@ -141,7 +141,7 @@ try {
           for (let i = 0; i < 160 && st2 < 6; i++) { const st = await win.ev(`document.getElementById('status').textContent`).catch(() => ''); if (st === l2 && !/^(Reading|Waiting)/.test(st) && st) st2++; else st2 = 0; l2 = st; await sleep(250); }
           const c = JSON.parse(await win.ev(`JSON.stringify({ status: document.getElementById('status').textContent, resultShown: !document.getElementById('result').hidden, summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent),
             findings: document.querySelectorAll('#risk-list li.point').length, findingsOpen: [...document.querySelectorAll('#risk-list li.point details')].every((d) => d.open),
-            unreadNotice: document.getElementById('unread').hidden ? null : document.getElementById('unread').innerText, docsReadOpen: document.getElementById('docs-read').open, candidatesOpen: document.getElementById('candidates').open })`));
+            readFrom: document.getElementById('read-from').hidden ? null : document.getElementById('read-from').innerText, partial: document.getElementById('partial').hidden ? null : document.getElementById('partial').innerText, optinShown: !document.getElementById('optin').hidden, hostedElsewhere: [...document.querySelectorAll('#read-from .hosted-note')].map((n) => n.textContent), unreadNotice: document.getElementById('unread').hidden ? null : document.getElementById('unread').innerText, docsReadOpen: document.getElementById('docs-read').open, candidatesOpen: document.getElementById('candidates').open })`));
           const slug = site.name + '-' + label.toLowerCase().replace(/[^a-z]+/g, '-');
           await send('Target.activateTarget', { targetId: win.targetId }).catch(() => {});
           const shc = await withTimeout(send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, win.sessionId), 20000, 'click screenshot').catch(() => null); if (shc) fs.writeFileSync(path.join(OUT, slug + '.png'), Buffer.from(shc.data, 'base64'));

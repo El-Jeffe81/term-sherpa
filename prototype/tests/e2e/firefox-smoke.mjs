@@ -198,8 +198,8 @@ try {
   assert.deepEqual(g2.origins, ['https://docs.newsco.test/*'], 'only the one site was granted');
   ok('only that one site was granted: ' + g2.origins.join(', '));
 
-  // (6) the guarded-fetch details that depend on the browser: redirects (no robots.txt check since v1.1), not followed (opaqueredirect in Firefox too),
-  // non-https / loopback links refused. Fed with the real injected-script result of the news page, like the Explain page itself does.
+  // (6) the guarded-fetch details that depend on the browser: redirects (no robots.txt check since v1.1). Only docs.newsco.test is granted here (per-site mode): a redirect that stays on that host is followed and read,
+  // one that leaves it is not read ("goes to another site" / "not allowed"); non-https / loopback links are refused. The all-sites mode is covered by the unit tests and the Chrome e2e only. Fed with the real injected-script result of the news page, like the Explain page itself does.
   const home = JSON.parse(await execAsync(`
     const src = await (await fetch(chrome.runtime.getURL('explain/explain.js'))).text();
     const files = [...(/INJECT_FILES\\s*=\\s*\\[([^\\]]+)\\]/.exec(src)[1]).matchAll(/'([^']+)'/g)].map((m) => m[1]);
@@ -215,13 +215,15 @@ try {
     return JSON.stringify({ kind: out.kind, read: out.read, unread: out.unread, items: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')) });`, [home, links(extra)]));
   const before2 = tlsHits.length;
   const rd = await run([['https://docs.newsco.test/blocked-by-robots', 'Blocked Policy'], ['https://docs.newsco.test/moved-terms', 'Moved Terms'], ['https://docs.newsco.test/moved-offsite', 'Offsite Terms'], ['http://127.0.0.1:1/internal', 'Internal Policy']]);
-  assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 3); assert.equal(rd.unread, 3);
+  assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 4); assert.equal(rd.unread, 2);
   assert.ok(!rd.items.some((t) => /Blocked Policy/.test(t) && /not read/.test(t)), 'a robots.txt Disallow no longer blocks the page: ' + JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t)), JSON.stringify(rd.items));
-  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /this link sends you to another page/.test(t)));
-  assert.ok(rd.items.some((t) => /Internal Policy/.test(t) && /link not allowed/.test(t)));
-  assert.deepEqual(tlsHits.slice(before2).map((h) => h.url).sort(), ['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/terms'], 'no robots.txt request, the robots-disallowed page is simply read; redirect targets never requested; loopback never requested');
-  ok('Firefox guarded fetch: no robots.txt check, same-site and off-site redirects NOT followed (targets never requested), loopback/http link refused; the rest still read');
+  assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /not read/i.test(t) === false), 'a same-host redirect is followed and read: ' + JSON.stringify(rd.items));
+  assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /(another site|not allowed|not opened)/.test(t)), JSON.stringify(rd.items));
+  assert.ok(rd.items.some((t) => /Internal Policy/.test(t) && /(not allowed|link not allowed)/.test(t)), JSON.stringify(rd.items));
+  const urls = tlsHits.slice(before2).map((h) => h.url);
+  assert.ok(!urls.includes('/robots.txt'), 'no robots.txt request');
+  assert.ok(['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/terms'].every((u) => urls.includes(u)), JSON.stringify(urls));
+  ok('Firefox guarded fetch (per-site mode): no robots.txt check, a same-host redirect is followed and read, an off-host redirect is not read, loopback/http link refused; the rest still read');
 
   // (7) the access the user granted can be removed again
   await exec(`document.getElementById('revoke').click(); return 1`);

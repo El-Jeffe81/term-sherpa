@@ -699,3 +699,9 @@ test('data_sharing evidence: rights notes, headings, quoted defined terms and me
   assert.notEqual(f('At times, Apple may make certain personal data available to strategic partners that work with Apple to provide products and services, or that help Apple market to customers.'), null, 'real partner sharing (Apple wording) still counts');
   assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });
+
+test('the unrelated-site note is not an analysis finding any more (it is shown under "Read from <host>" by the window)', () => {
+  const docs = [{ text: 'We may share your personal information with third parties.', doc_type: 'privacy', label: 'Privacy Policy' }];
+  const a = analyzeDocuments(docs, { host: 'www.cnn.com', via: 'dialog', hostedElsewhere: [{ label: 'Privacy Policy', host: 'www.wbdprivacy.com' }] });
+  assert.ok(!a.findings.some((f) => f.id === 'hosted-elsewhere' || /hosted on/.test(f.line)), 'never mixed in with the terms findings');
+});

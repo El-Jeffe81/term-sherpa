@@ -11,8 +11,14 @@
  * just those sites (optional_host_permissions: nothing is allowed up front). The dialog itself is only read, never
  * clicked. Fetched text is untrusted, shown through textContent, and not saved unless "Also save a copy" is on.
  *
- * Storage: by DEFAULT NOTHING ABOUT THE TERMS IS SAVED. The only thing written without a choice is one yes/no marker
- * (chrome.storage.local "tc.welcomeSeen") so the welcome screen shows once. The old collection path (TCDB, IndexedDB) is kept but is used
+ * Policy links that leave the site (a redirect to another host) can only be read with the optional "all sites" access
+ * (the optional all-https-sites permission, never installed up front). The first time that is needed a Term Sherpa screen explains it BEFORE the browser's own
+ * prompt; "Allow all sites" asks the browser (from that click), "Not now" is remembered (one yes/no marker) and the document gets a
+ * "Read it" button that opens its link in a normal tab. Options has a switch to turn the access off and on again. The access is only
+ * ever used for reads the person starts.
+ *
+ * Storage: by DEFAULT NOTHING ABOUT THE TERMS IS SAVED. The only things written without a choice are two yes/no markers
+ * (chrome.storage.local "tc.welcomeSeen" so the welcome screen shows once, and "tc.allSitesDeclined" so "Not now" is not asked again). The old collection path (TCDB, IndexedDB) is kept but is used
  * only inside maybeSave(), and only if the user ticked "Also save a copy" in Options (a boolean flag in localStorage).
  * The only other thing kept is the one link a user picks from a list ("Open this page"): its URL and type, for one hour.
  */
@@ -23,6 +29,9 @@
   var INJECT_FILES = ['/core/untrusted.js', '/core/extract.js', '/core/detect.js', '/core/consent.js', '/content/run.js'];
   var SHOW_LINKS = 3; // list mode: this many, the rest behind "Show more"
   var pending = null; // documents waiting for the user's OK to read them: { links, ctx }
+  var optin = null; // the all-sites screen is waiting for a click: { links, ctx }
+  var ALL_SITES = ['https://' + '*' + '/' + '*']; // the optional all-https-sites permission (written in pieces so no comment-like text sits in the source)
+  var DECLINED_KEY = 'tc.allSitesDeclined';
   var SAVE_KEY = 'tc.saveCopies';
   var PICK_KEY = 'tc.picks';
   var PICK_TTL_MS = 60 * 60 * 1000;
@@ -36,6 +45,7 @@
   }
   function clear(node) { node.textContent = ''; }
   function hostOf(u) { try { return new URL(u).host; } catch (e) { return ''; } }
+  function hostnameOf(u) { try { return new URL(u).hostname; } catch (e) { return ''; } }
   function stripHash(u) { return String(u || '').replace(/#.*$/, ''); }
 
   /* ---------- options and picks (localStorage of the extension page; no terms text) ---------- */
@@ -111,6 +121,7 @@
     if (multi && f.sources && f.sources.length) top.appendChild(el('span', f.sources.join(' + '), 'src'));
     li.appendChild(top);
     if (f.contextNote) li.appendChild(el('div', f.contextNote, 'ctx'));
+    if (!f.evidence || !f.evidence.length) return li; // a finding about where the document is hosted has no quotation
     var d = el('details');
     d.open = true;
     d.className = 'exact';
@@ -130,6 +141,7 @@
 
   function renderAnalysis(a) {
     $('result').hidden = false;
+    $('read-from').hidden = true; clear($('read-from')); // explainLinks fills it in when a document was read from another host
     var multi = (a.documents || []).filter(function (d) { return d.label; }).length > 0;
     var sum = $('overview-summary'); clear(sum);
     a.overview.summary.forEach(function (t) { sum.appendChild(el('li', t)); });
@@ -151,37 +163,76 @@
 
   function variantNote(d) { return d.variants ? '(' + d.variants + ' other regional or language version' + (d.variants === 1 ? '' : 's') + ' of this page not shown)' : ''; }
 
-  // What to tell a person about a document that could not be read, in plain words, and what to do next.
+  // What to tell a person to do about a document that could not be read, in plain words.
   function unreadAdvice(it) {
-    if (it.redirect) {
-      var th = it.target ? hostOf(it.target) : '';
-      return 'This link sends you to another page' + (th ? ' (on ' + th + ')' : '') + '. Open it and run Term Sherpa there.';
-    }
-    if (it.needs_js) return 'This page only shows its text after it runs JavaScript, so I cannot read it from here. Open it, then click Term Sherpa there and I will explain what is on the screen.';
+    if (it.needs_all_sites) return allSitesNow ? 'Open it and click Term Sherpa there.' : ''; // without all-sites access the advice is part of the sentence
+    if (it.needs_js) return 'Open it, then click Term Sherpa there and I will explain what is on the screen.';
     return '';
   }
-  // Plain words for why one document was not read (used in the amber notice).
+  var allSitesNow = false; // whether all-sites access was on for the read being shown (set by explainLinks)
+  // Plain words for why one document was not read (the amber notice and the documents list).
   function unreadWhy(it) {
-    if (it.redirect) return 'its link sends you to another page, and I do not follow redirects because I cannot check where they lead' + (it.target ? ' (it goes to ' + hostOf(it.target) + ')' : '');
-    if (it.needs_js) return 'its text only appears after the page runs JavaScript, which I do not run';
-    var r = String(it.reason || 'it could not be read');
-    return r.replace(/^not read: /, '').replace(/^not opened: /, '');
+    // Link goes to another site and all-sites access is off: say how to fix it. With all-sites access already on, that is not the reason: say what is accurate.
+    if (it.needs_all_sites) return allSitesNow ? 'Its link goes to another site that could not be read.' : 'Its link goes to another site. Allow all sites above, or open it and click Term Sherpa there.';
+    if (it.unsafe) return "Its link goes to an address Term Sherpa won't open.";
+    if (it.needs_js) return "Its text only appears after the page runs JavaScript, which Term Sherpa doesn't run.";
+    var r = String(it.reason || 'it could not be read').replace(/^not read: /, '').replace(/^not opened: /, '');
+    return 'Why: ' + r + '.';
   }
+  // Open a document's own link in a normal tab; the person clicks Term Sherpa there. The link is remembered for an hour as the page they picked.
+  function openInTab(it) { addPick(it.url, it.doc_type); chrome.tabs.create({ url: it.url }); }
   // (c) Any document that could not be read: a clear amber notice that says plainly why. Shown for every unread document, whether or not others were read.
   function renderUnreadNotice(items) {
     var box = $('unread'), list = $('unread-list'); clear(list);
     var bad = items.filter(function (x) { return !x.ok; });
     bad.forEach(function (it) {
       var li = el('li');
-      li.appendChild(el('strong', (it.label || 'A document') + ': '));
-      li.appendChild(document.createTextNode('I could not read this one because ' + unreadWhy(it) + '.'));
+      li.appendChild(el('strong', (it.label || 'A document') + " wasn't read."));
+      li.appendChild(document.createTextNode(' ' + unreadWhy(it)));
       var adv = unreadAdvice(it);
       if (adv) li.appendChild(el('div', adv, 'advice'));
+      if (it.needs_all_sites) {
+        var rb = el('button', 'Read it');
+        rb.className = 'read-it';
+        rb.addEventListener('click', function () { openInTab(it); });
+        li.appendChild(rb);
+      }
       list.appendChild(li);
     });
-    $('unread-head').textContent = bad.length === 1 ? 'One document could not be read' : bad.length + ' documents could not be read';
+    $('unread-head').textContent = bad.length === 1 ? "1 document couldn't be read" : bad.length + " documents couldn't be read";
     $('unread-lead').textContent = items.some(function (x) { return x.ok; }) ? 'The explanation above does not cover ' + (bad.length === 1 ? 'it' : 'them') + '.' : 'Nothing could be explained.';
     box.hidden = bad.length === 0;
+  }
+  // A document that was only partly read (the first 8 MB): say so plainly.
+  function renderPartialNotice(items) {
+    var box = $('partial'), list = $('partial-list'); clear(list);
+    var cut = items.filter(function (x) { return x.ok && x.truncated; });
+    cut.forEach(function (it) {
+      var li = el('li');
+      li.appendChild(el('strong', it.label || 'A document'));
+      li.appendChild(document.createTextNode(' was cut off after the first 8 MB, so the explanation covers only that part.'));
+      list.appendChild(li);
+    });
+    $('partial-head').textContent = cut.length === 1 ? 'Only part of this document was read.' : 'Only part of ' + cut.length + ' documents was read.';
+    box.hidden = cut.length === 0;
+  }
+  // "Read from <host>": shown at the top of the results for every document whose link led to another host. The host comes from the answer itself.
+  // When that host belongs to someone unrelated to the page, a Low note sits directly under that document's line (not in the findings list).
+  function renderReadFrom(items, pageHost) {
+    var list = $('read-from'); clear(list);
+    var moved = items.filter(function (x) { return x.ok && x.read_from; });
+    var many = items.filter(function (x) { return x.ok; }).length > 1;
+    moved.forEach(function (it) {
+      var li = el('li', (many ? (it.label || 'Document') + ': ' : '') + 'Read from ' + it.read_from);
+      if (TCPsl.unrelatedPolicyHost(pageHost, it.read_from)) {
+        var note = el('div', undefined, 'hosted-note');
+        note.appendChild(sevBadge('Low'));
+        note.appendChild(document.createTextNode('This policy is hosted on a different site (' + it.read_from + "). Check that it belongs to the company you're dealing with."));
+        li.appendChild(note);
+      }
+      list.appendChild(li);
+    });
+    list.hidden = moved.length === 0;
   }
 
   // Which documents were read, which were not and why. Collapsed. Links are opened by the user, never followed here.
@@ -190,13 +241,13 @@
     items.forEach(function (it) {
       var li = el('li');
       li.appendChild(el('span', it.label || 'Document', 'badge'));
-      li.appendChild(el('span', it.ok ? 'read' : 'not read: ' + it.reason, it.ok ? 'muted' : 'muted warn'));
-      if (!it.ok && unreadAdvice(it)) li.appendChild(el('div', unreadAdvice(it), 'muted'));
+      li.appendChild(el('span', it.ok ? (it.truncated ? 'read (only part)' : 'read') : 'not read: ' + String(it.reason || '').replace(/^not read: /, ''), it.ok ? 'muted' : 'muted warn'));
+      if (it.ok && it.read_from) li.appendChild(el('div', 'Read from ' + it.read_from, 'muted read-from-note'));
+      if (!it.ok && it.needs_js && unreadAdvice(it)) li.appendChild(el('div', unreadAdvice(it), 'muted'));
       if (variantNote(it)) li.appendChild(el('div', variantNote(it), 'muted'));
       li.appendChild(el('div', it.url, 'url'));
-      var go = it.target || it.url, goHost = it.target ? hostOf(it.target) : '';
-      var b = el('button', goHost ? 'Open ' + goHost : 'Open this page');
-      b.addEventListener('click', function () { addPick(go, it.doc_type); chrome.tabs.create({ url: go }); });
+      var b = el('button', it.needs_all_sites ? 'Read it' : 'Open this page');
+      b.addEventListener('click', function () { openInTab(it); });
       li.appendChild(b);
       list.appendChild(li);
     });
@@ -204,6 +255,7 @@
     box.open = false; // collapsed, at the bottom
     box.hidden = items.length === 0;
     renderUnreadNotice(items);
+    renderPartialNotice(items);
   }
 
   // List mode: the distinct documents (regional / language copies collapsed), 3 shown, the rest behind a toggle.
@@ -252,10 +304,18 @@
   function hasAccess(origins) { return chrome.permissions.contains({ origins: origins }).then(function (ok) { return !!ok; }, function () { return false; }); }
   // chrome.permissions.request only works from a user gesture; without one it fails and we show the button instead.
   function requestAccess(origins) { return chrome.permissions.request({ origins: origins }).then(function (ok) { return !!ok; }, function () { return false; }); }
-  function fetchDeps() {
+  function fetchDeps(allSites) {
     // dnsCheck: only in Firefox (browser.dns.resolve); null elsewhere, which docfetch treats as "no DNS check"
-    return { fetch: window.fetch.bind(window), parseHtml: TCDomParse.parseHtml, guard: TCNetGuard, detect: TCDetect, extract: TCExtract, untrusted: TCUntrusted, dnsCheck: TCDnsGuard.fromBrowser(globalThis, TCNetGuard) };
+    return { allSites: !!allSites, fetch: window.fetch.bind(window), parseHtml: TCDomParse.parseHtml, guard: TCNetGuard, detect: TCDetect, extract: TCExtract, untrusted: TCUntrusted, dnsCheck: TCDnsGuard.fromBrowser(globalThis, TCNetGuard) };
   }
+  // The yes/no "Not now" marker for the all-sites screen.
+  async function allSitesDeclined() {
+    try { var o = await chrome.storage.local.get(DECLINED_KEY); return !!(o && o[DECLINED_KEY]); } catch (e) { return false; }
+  }
+  async function setAllSitesDeclined(on) {
+    try { if (on) await chrome.storage.local.set((function () { var o = {}; o[DECLINED_KEY] = true; return o; })()); else await chrome.storage.local.remove(DECLINED_KEY); } catch (e) { /* best effort: the screen would just show again */ }
+  }
+  async function refreshAllSitesBox() { $('all-sites').checked = await hasAccess(ALL_SITES); }
   function siteNames(origins) { return origins.map(function (o) { return o.replace(/^https:\/\//, '').replace(/\/\*$/, ''); }).join(', '); }
 
   function showPermission(prep, links, ctx) {
@@ -268,7 +328,7 @@
   }
 
   async function explainLinks(links, ctx) {
-    $('permission').hidden = true; $('result').hidden = true; $('docs-read').hidden = true; $('unread').hidden = true;
+    $('permission').hidden = true; $('optin').hidden = true; optin = null; $('result').hidden = true; $('docs-read').hidden = true; $('unread').hidden = true; $('partial').hidden = true;
     var docs = TCLinkGroup.dedupe(links, { lang: userLang() }).docs;
     var prep = TCDocFetch.prepare(docs.map(function (d) { return { url: d.url, label: d.label, doc_type: d.doc_type, is_pdf: d.is_pdf, variants: d.variants }; }), { guard: TCNetGuard, detect: TCDetect });
     if (!prep.accepted.length) {
@@ -276,8 +336,12 @@
       showCandidates(ctx.all || links, ctx);
       return { kind: 'links' };
     }
-    if (ctx.gesture) setStatus('Waiting for your browser to ask you about access to ' + siteNames(prep.origins) + '...');
-    var granted = ctx.gesture ? await requestAccess(prep.origins) : (await hasAccess(prep.origins)) || (await requestAccess(prep.origins));
+    var allSites = await hasAccess(ALL_SITES); // the optional "all sites" access, if the person gave it
+    var granted = allSites;
+    if (!granted) {
+      if (ctx.gesture) setStatus('Waiting for your browser to ask you about access to ' + siteNames(prep.origins) + '...');
+      granted = ctx.gesture ? await requestAccess(prep.origins) : (await hasAccess(prep.origins)) || (await requestAccess(prep.origins));
+    }
     if (!granted) {
       if (ctx.gesture) setStatus('Access to ' + siteNames(prep.origins) + ' was not allowed, so nothing was read.', true);
       else setStatus(ctx.intro);
@@ -286,18 +350,25 @@
       return { kind: 'permission', docs: prep.accepted.map(function (d) { return d.label; }), origins: prep.origins };
     }
     pending = null;
-    var results = await TCDocFetch.fetchAll(prep.accepted, fetchDeps(), function (i, n, d) { setStatus('Reading ' + (i + 1) + ' of ' + n + ': ' + d.label + '...'); });
+    var results = await TCDocFetch.fetchAll(prep.accepted, fetchDeps(allSites), function (i, n, d) { setStatus('Reading ' + (i + 1) + ' of ' + n + ': ' + d.label + '...'); });
     var read = results.filter(function (r) { return r.ok; });
     var unread = results.filter(function (r) { return !r.ok; }).concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }));
+    allSitesNow = allSites;
     renderDocuments(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); })));
+    // A link that left the site could not be read with per-site access only: explain the all-sites choice once (unless "Not now" was chosen before).
+    if (!allSites && results.some(function (r) { return r.needs_all_sites; }) && !(await allSitesDeclined())) { optin = { links: links, ctx: ctx }; $('optin').hidden = false; }
+    var pageHost = hostnameOf('https://' + (ctx.host || ''));
+    renderReadFrom(read, pageHost);
     if (!read.length) {
       setStatus('I could not read ' + (results.length + prep.rejected.length > 1 ? 'any of these documents' : 'this document') + ' (see the notice below).', true);
       showCandidates(ctx.all || links, ctx);
       return { kind: 'unreadable', unread: unread.map(function (u) { return u.label + ': ' + u.reason; }) };
     }
     var analysis = TCAnalyze.analyzeDocuments(read.map(function (r) { return { text: r.text, doc_type: r.doc_type, label: r.label, url: r.url }; }),
-      { host: ctx.host, via: ctx.via, unread: unread.map(function (u) { return { label: u.label, reason: u.reason }; }) });
+      { host: ctx.host, via: ctx.via,
+        unread: unread.filter(function (u) { return !u.redirect; }).map(function (u) { return { label: u.label, reason: u.reason }; }) });
     renderAnalysis(analysis);
+    renderReadFrom(read, pageHost);
     var msg = 'Done. Read ' + read.length + (read.length === 1 ? ' document' : ' documents') + '. Nothing was saved.' + TCAnalyze.languageNote(read);
     if (saveEnabled()) {
       try {
@@ -330,7 +401,7 @@
 
   /* Turn the injected script's result into what the window shows. Exposed (TCExplainUI.show) so the headless e2e can check the rendering. */
   async function show(res) {
-    ['result', 'candidates', 'paste', 'permission', 'docs-read', 'unread'].forEach(function (id) { $(id).hidden = true; });
+    ['result', 'candidates', 'paste', 'permission', 'optin', 'docs-read', 'unread', 'partial'].forEach(function (id) { $(id).hidden = true; });
     var page = res.page || {};
     $('frames').hidden = true; frameAsk = null;
     var host = hostOf(page.url || (res.extracted && res.extracted.url) || '');
@@ -413,12 +484,52 @@
 
   $('perm-go').addEventListener('click', function () { if (pending) explainLinks(pending.links, Object.assign({}, pending.ctx, { gesture: true })); });
 
+  // The all-sites screen. "Allow all sites" asks the browser FROM THIS CLICK (a user gesture), then reads again; anything else falls back to "Read it".
+  $('optin-go').addEventListener('click', async function () {
+    var st = optin;
+    var ok = await requestAccess(ALL_SITES);
+    await refreshAllSitesBox();
+    if (ok) {
+      await setAllSitesDeclined(false);
+      $('optin').hidden = true; optin = null;
+      setStatus('All-sites access is on. Reading again...');
+      if (st) explainLinks(st.links, Object.assign({}, st.ctx, { gesture: true }));
+      return;
+    }
+    await setAllSitesDeclined(true);
+    $('optin').hidden = true; optin = null;
+    setStatus('All-sites access was not allowed. Use "Read it" to open a document yourself and click Term Sherpa there. You can turn it on later under Options.', true);
+  });
+  $('optin-no').addEventListener('click', async function () {
+    await setAllSitesDeclined(true);
+    $('optin').hidden = true; optin = null;
+    setStatus('Okay. Use "Read it" to open a document yourself and click Term Sherpa there. You can turn all-sites access on later under Options.');
+  });
+
+  // Options switch: all-sites access on / off (the same optional all-https-sites permission).
+  $('all-sites').addEventListener('change', async function () {
+    var want = $('all-sites').checked;
+    if (want) {
+      var ok = await requestAccess(ALL_SITES);
+      if (!ok) { await refreshAllSitesBox(); return setStatus('All-sites access was not allowed, so it stays off.', true); }
+      await setAllSitesDeclined(false);
+      return setStatus('All-sites access is ON: policy links that lead to another site can be read, only when you ask.');
+    }
+    try {
+      await chrome.permissions.remove({ origins: ALL_SITES });
+      await setAllSitesDeclined(true); // turned off on purpose: do not ask again
+      setStatus('All-sites access is OFF. Links that lead to another site will not be read; use "Read it" to open them yourself.');
+    } catch (e) { setStatus('Could not turn all-sites access off: ' + e.message, true); }
+    await refreshAllSitesBox();
+  });
+
   $('revoke').addEventListener('click', async function () {
     try {
       var all = await chrome.permissions.getAll();
       var origins = (all.origins || []).slice();
       if (!origins.length) return setStatus('No extra site access is allowed right now.');
       await chrome.permissions.remove({ origins: origins });
+      await refreshAllSitesBox();
       setStatus('Removed access to ' + origins.length + ' site' + (origins.length === 1 ? '' : 's') + '. I will ask again next time.');
     } catch (e) { setStatus('Could not remove site access: ' + e.message, true); }
   });
@@ -438,5 +549,6 @@
   box.addEventListener('change', function () { setSaveEnabled(box.checked); setStatus(box.checked ? 'Saving copies is ON for the next page you explain.' : 'Saving copies is OFF. Nothing about the terms is stored.'); });
 
   globalThis.TCExplainUI = { show: show, renderAnalysis: renderAnalysis };
+  refreshAllSitesBox();
   start();
 })();
