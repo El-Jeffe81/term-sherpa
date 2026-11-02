@@ -21,7 +21,7 @@ no content scripts and no declarativeNetRequest, so it does not hit the known MV
 | `tabs.query({active, currentWindow})`, `tabs.get`, `tabs.create` | Supported | MDN: `tabs.query` on Android "may only return a subset" of tabs; the active-tab query is the common case. |
 | `windows.create` (`launcher.js`) | **Not supported** | Fixed in this branch: the launcher checks for `chrome.windows.create` and falls back to `tabs.create`; a unit test covers "missing" and "rejects". |
 | IndexedDB (`popup/db.js`, opt-in storage) | Standard web API | Works in desktop Firefox (e2e). |
-| `fetch` with `redirect:'manual'`, `credentials:'omit'` | Standard web API | Same engine as desktop; behaviour matches the desktop e2e (redirects not followed). |
+| `fetch` with `redirect:'follow'` (plus one `redirect:'manual'` probe), `credentials:'omit'` | Standard web API | Same engine as desktop. Not run on Android; the Firefox desktop e2e (`firefox-smoke.mjs`) has been updated for the v1.1 behaviour but could not be run in the environment that made the change. |
 
 ## UI on a small screen
 Done in v1.0.0 (CSS only, `explain/explain.css`, `popup/popup.css`; every page has `<meta name="viewport" content="width=device-width, initial-scale=1">`):
@@ -39,7 +39,7 @@ On Android the Explain page opens as a normal **tab** (no popup windows). The to
 
 ## Known risks, in order
 1. `activeTab` grant surviving the switch to the new tab (see above). If it does not, the fix is to read the page from the launcher popup before opening Explain, or to open Explain in the same tab.
-2. The optional-permission prompt on Android for `https://*/*`-pattern sites (it is requested per site, not for all sites).
+2. The optional-permission prompt on Android for the `https://*/*` pattern: it is requested per site by default, and for all sites only after the user taps "Allow all sites" on the Term Sherpa opt-in screen. Whether Android shows that prompt, and the "Read it" tab fallback, are untested.
 3. Extension install on release Firefox for Android needs an AMO listing (or an AMO-signed unlisted file); a temporary add-on needs a USB-connected device and `web-ext run -t firefox-android`.
 
 ## How to test it on a real phone (free)

@@ -29,10 +29,13 @@
 <p>An &ldquo;I agree&rdquo; box usually links to documents on other pages. When you click the button, Term Sherpa can fetch those documents so it can read them. These requests:</p>
 <ul>
 <li>only happen after you click, and only for sites you allow (see the permission below);</li>
-<li>use secure https addresses only, send no cookies and no referrer, and are never sent to private or local addresses;</li>
-<li>respect each site&rsquo;s <code>robots.txt</code>: if it says not to fetch the document, Term Sherpa skips it and shows you the link;</li>
+<li>use secure https addresses only, send no cookies and no referrer, run no scripts, and are never sent to private or local addresses;</li>
+<li>read one page at a time, only the first 8&nbsp;MB of it, and save nothing (unless you turn on &ldquo;Save copies&rdquo;);</li>
+<li>do <em>not</em> check <code>robots.txt</code>: Term Sherpa reads only the one page you asked about, like opening it yourself, so it is not crawling. (An earlier version did check it; that was removed.)</li>
 <li>go to the website that publishes the document, like opening the link yourself. That website can see the request, as it can any visit.</li>
 </ul>
+<p><strong>Links that go to another site.</strong> Policies are often hosted elsewhere (for example a company&rsquo;s privacy policy on a separate privacy site). The first time you click one of those links, Term Sherpa shows its own screen, &ldquo;Read policies wherever they&rsquo;re hosted&rdquo;, before your browser asks. Your browser will say it can &ldquo;read and change all your data on all websites&rdquo;. Term Sherpa only uses that to read legal pages you ask about, saves nothing, and never runs their code. If you choose &ldquo;Not now&rdquo; (or say no in the browser), the document is not read and a &ldquo;Read it&rdquo; button opens the link in a normal tab, where you can click Term Sherpa. You can turn this access off and on again in Options.</p>
+<p>When all-sites access is on, Term Sherpa follows redirects for a page you asked about, but it checks the address the page finally came from (https only, never private or local) before reading anything, and shows it at the top of the result (&ldquo;Read from &hellip;&rdquo;). If the policy is hosted on a site unrelated to the page, it is reported as a finding. <strong>Honest limit:</strong> the browser itself follows a redirect, so it sends one cookie-less, referrer-less request to the redirect target before Term Sherpa can look at the address; if the address is not allowed, Term Sherpa throws the answer away unread. The same single request can happen without all-sites access, when a link redirects to a site you have not allowed: the browser then refuses the answer and Term Sherpa shows &ldquo;Read it&rdquo;. To tell &ldquo;sent elsewhere&rdquo; from &ldquo;offline&rdquo;, Term Sherpa may repeat that one request without following the redirect.</p>
 
 <h2>Permissions, and why</h2>
 <table>
@@ -40,7 +43,7 @@
 <tr><td><code>activeTab</code></td><td>Lets Term Sherpa read the page you are on, only when you click its button.</td></tr>
 <tr><td><code>scripting</code></td><td>Runs the reader on that page after you click.</td></tr>
 <tr><td><code>storage</code></td><td>Keeps your settings and the &ldquo;seen the first-run screen&rdquo; note on your device, and saved copies if you turn them on.</td></tr>
-<tr><td>Optional: <code>https://*/*</code> (per site)</td><td>Asked for at click time, per site, to fetch the documents the page links to. Not granted at install. You can remove it any time with &ldquo;Remove the site access I have allowed&rdquo; in Options, or in your browser&rsquo;s extension settings.</td></tr>
+<tr><td>Optional: <code>https://*/*</code></td><td>Asked for at click time, to fetch the documents the page links to: per site, or for all sites if you choose &ldquo;Allow all sites&rdquo; on the opt-in screen. Not granted at install, and only used for reads you start. You can remove it any time with the all-sites switch or &ldquo;Remove the site access I have allowed&rdquo; in Options, or in your browser&rsquo;s extension settings.</td></tr>
 <tr><td><code>dns</code> (Firefox only)</td><td>Checks that a link&rsquo;s host name points to a public address and not to your own network, before fetching. The answer is used and discarded.</td></tr>
 </table>
 

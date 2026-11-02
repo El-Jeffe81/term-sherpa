@@ -10,10 +10,9 @@ the CLI, mode 600). There is no central collection, no upload, no analytics. Rec
 ## 2. What the extension is allowed to keep
 - It reads nothing until the user clicks. Permissions: `activeTab` + `scripting`; no content scripts,
   no background worker. Since v0.3.0 the Explain window may fetch the documents an agree dialog links to, using one *optional*
-  host permission (`https://*/*`) that is requested per site at click time (see `implementation.md`); the fetch code is
+  host permission (`https://*/*`) that is requested at click time, per site by default or for all sites after an explicit opt-in screen, and used only for reads the user starts (see `implementation.md`); the fetch code is
   `extension/core/docfetch.js` (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
-  Since v0.3.1 redirects are never followed (`redirect:'manual'`; the redirect target is never requested, so a document cannot bounce the
-  extension to localhost, a private or another address) and bare IP-address hosts are refused. Since v1.1 the extension does not consult
+  Since v1.1 redirects are followed (`redirect:'follow'`, GET, no credentials, no Referer, no scripts) and the final URL (`res.url`) must be https and pass the address checks (plus the DNS check on Firefox) before a byte of the body is read, otherwise it is discarded; bare IP-address hosts are refused; at most 8 MB of a page is read. The window shows the real final host ("Read from ...") and flags a policy hosted on an unrelated site (bundled Public Suffix List). **Residual risk, stated plainly:** the browser performs the redirect itself, so it has already sent one GET (no cookies, Referer or Authorization) to the target before the extension can look at `res.url`; a disallowed target is then discarded unread. Measured in headless Chrome: in per-site mode, where the target host is not allowed, the browser still sends that one GET and then refuses the response (fetch throws); the extension may then repeat the link once with `redirect:'manual'` to tell "redirected away" from "offline". Neither request can read the target's answer. Before v1.1 (v0.3.1) redirects were never followed. Since v1.1 the extension does not consult
   `robots.txt` (it fetches only the page a person asked for with a click, one at a time, rate limited, without cookies); the CLI still does. The manifest deliberately has no
   `declarativeNetRequest*` permission: the variant that could vet redirects up front shows the install warning "Block content on any page",
   and the warning-free variant cannot cover unpermitted sites (measured in headless Chrome: `npm run probe:dnr`).
@@ -76,6 +75,6 @@ Sanitising and flagging reduce the risk; they do not remove it. Rule 2 (no tools
 
 ## Other browsers (Edge, Brave, Opera, Vivaldi, Firefox)
 The same guards apply in every package because the code is shared byte for byte. Checked in the headless e2e of each browser (see `docs/BROWSER_TESTING.md`):
-https only, no cookies / Referer / Authorization sent, redirects not followed (the redirect target is never requested), no robots.txt request, loopback and plain-http links refused,
+https only, no cookies / Referer / Authorization sent, redirects followed only with the final URL vetted (all-sites mode) or refused with a "Read it" link (per-site mode; one cookie-less GET to the target is still sent by the browser, see above), no robots.txt request, loopback and plain-http links refused,
 a hostile linked document stays inert text, and the granted site access can be removed again. Firefox adds one thing to remember: the optional `https://*/*` permission is declared
-exactly as in Chrome and is prompted per site on a click; the Firefox manifest also declares `data_collection_permissions: none`. Not covered: the real permission prompt UI and a human toolbar click in any browser.
+exactly as in Chrome and is prompted on a click (per site, or for all sites after the opt-in screen); the Firefox manifest also declares `data_collection_permissions: none`. Not covered: the real permission prompt UI and a human toolbar click in any browser.
