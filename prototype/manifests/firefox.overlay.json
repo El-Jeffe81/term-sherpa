@@ -1,0 +1,23 @@
+{
+  "_comment": "Merged over extension/manifest.json by scripts/build.js to make the Firefox package. Only differences live here; everything else is shared. This extension has no background page or service worker. If one is ever added to the shared manifest, the build turns background.service_worker into background.scripts for Firefox (see scripts/build.js). permissions here REPLACES the shared list (arrays are not merged): it is the shared list plus \"dns\", which is Firefox-only (browser.dns.resolve, core/dnsguard.js). tests/validate-manifest.js checks that it is exactly that.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "dns"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "term-sherpa@el-jeffe81.github.io",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}

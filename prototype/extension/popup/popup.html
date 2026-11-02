@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Term Sherpa</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>Term Sherpa</h1>
+  <p class="muted">Nothing happens until you click. Everything stays on this device. Informational only, not legal advice.</p>
+
+  <button id="help" class="primary">Please help me</button>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <section id="candidates" hidden>
+    <h2>Pages I found on this site</h2>
+    <ul id="candidate-list"></ul>
+    <p class="muted">Only these links are remembered, not the page you are on. Open one, then click "Please help me" on that page to save that document.</p>
+  </section>
+
+  <section id="paste" hidden>
+    <h2>I couldn't find any terms links</h2>
+    <p>Paste the link to the terms or privacy page:</p>
+    <div class="row">
+      <input id="paste-url" type="url" placeholder="https://example.com/terms" aria-label="URL of the terms page">
+      <button id="paste-open">Open it</button>
+    </div>
+    <p class="muted">It opens in a new tab. Click "Please help me" there.</p>
+  </section>
+
+  <section>
+    <h2>Saved on this device <span id="count" class="muted"></span></h2>
+    <ul id="docs"></ul>
+    <p id="empty" class="muted" hidden>Nothing saved yet.</p>
+    <div class="row">
+      <button id="export">Download my data (JSON)</button>
+      <button id="clear" class="danger">Delete everything</button>
+    </div>
+  </section>
+
+  <script src="../core/untrusted.js"></script>
+  <script src="../core/netguard.js"></script>
+  <script src="../core/versioning.js"></script>
+  <script src="db.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

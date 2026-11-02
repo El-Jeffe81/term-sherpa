@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Term Sherpa: explanation</title>
+  <link rel="stylesheet" href="explain.css">
+</head>
+<body>
+  <header class="brand"><img src="../icons/icon-48.png" width="40" height="40" alt=""><h1>Term Sherpa</h1></header>
+
+  <section id="welcome" hidden aria-labelledby="h-welcome">
+    <h2 id="h-welcome">Welcome to Term Sherpa</h2>
+    <p>Term Sherpa explains the terms of service, privacy policy or "I agree" box you are looking at, in plain English.</p>
+    <ul class="welcome-points">
+      <li><strong>It only looks when you click its icon.</strong></li>
+      <li><strong>Nothing leaves your device.</strong> No accounts, no tracking, nothing about what you read is sent to anyone.</li>
+      <li><strong>Nothing is saved by default.</strong> When you close this window, it is forgotten.</li>
+      <li>The only time it goes online is to open a terms page you ask it to read, and your browser asks you first.</li>
+    </ul>
+    <button id="welcome-go" class="primary">Continue</button>
+  </section>
+
+  <div id="app">
+  <div id="status" role="status" aria-live="polite">Reading the page...</div>
+
+  <main id="result" hidden>
+    <section id="overview" aria-label="Overview">
+      <ul id="overview-summary" class="overview"></ul>
+      <p id="overview-note" class="muted" hidden></p>
+    </section>
+
+    <section id="risks" aria-labelledby="h-risks">
+      <h2 id="h-risks">Worth knowing</h2>
+      <ul id="risk-list" class="points"></ul>
+    </section>
+
+    <section id="also" aria-labelledby="h-also">
+      <h2 id="h-also">Also agreeing to <span class="muted">(lower concern)</span></h2>
+      <ul id="also-list" class="points"></ul>
+    </section>
+
+    <p id="nothing-found" class="nothing-found" hidden>Nothing found doesn't mean there's no risk.</p>
+
+    <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict.</p>
+  </main>
+
+  <section id="frames" hidden>
+    <h2>Part of this page is in a frame I can't read</h2>
+    <p id="frames-text"></p>
+    <button id="frames-go" class="primary">Allow that site and look again</button>
+    <p class="muted">Your browser asks first. You can remove the access again under Options.</p>
+  </section>
+
+  <section id="permission" hidden>
+    <h2>Read the documents you are agreeing to</h2>
+    <p id="perm-text"></p>
+    <button id="perm-go" class="primary">Read these documents</button>
+    <p class="muted">Nothing is allowed in advance. You can remove the access again under Options.</p>
+  </section>
+
+  <details id="docs-read" class="docs" hidden>
+    <summary id="docs-count">Documents read</summary>
+    <ul id="docs-list" class="plain"></ul>
+  </details>
+
+  <section id="candidates" hidden>
+    <h2>Legal documents on this page</h2>
+    <ul id="candidate-list"></ul>
+    <p><button id="candidate-more" hidden>Show more</button> <button id="candidate-all" hidden>Explain all of these together</button></p>
+    <p class="muted">"Explain this" reads that one document for you (your browser asks once to allow the site). "Open this page" opens it in a tab; click the Term Sherpa icon there. Only a link you open is remembered, for one hour.</p>
+  </section>
+
+  <section id="paste" hidden>
+    <h2>I couldn't find any terms links</h2>
+    <p>Paste the link to the terms or privacy page:</p>
+    <div class="row">
+      <input id="paste-url" type="url" placeholder="https://example.com/terms" aria-label="URL of the terms page">
+      <button id="paste-open">Open it</button>
+    </div>
+  </section>
+
+  <details id="options" class="options">
+    <summary>Options</summary>
+    <label class="opt"><input type="checkbox" id="save-copies"> Also save a copy of the terms on this device (off by default)</label>
+    <p class="muted">By default nothing about the terms is stored: the text is read, explained, and forgotten when you close this window. If you turn this on, each terms page you explain is also saved in this extension's local database on this device (never uploaded), where the older "saved copies" list can show, export or delete it.</p>
+    <p class="muted">When you ask me to read the documents an "I agree" dialog links to, your browser asks once per site for access. Nothing is allowed up front.</p>
+    <p><button id="revoke">Remove the site access I have allowed</button></p>
+    <p><a id="saved-link" href="../popup/popup.html" target="_blank" rel="noopener">Open saved copies (advanced)</a></p>
+  </details>
+
+  </div>
+
+  <p id="disclaimer" class="disclaimer">Term Sherpa is a plain-English guide, not a lawyer. It isn't legal advice and can miss or misread things. Read the full terms, and ask a lawyer about anything important.</p>
+
+  <script src="../core/untrusted.js"></script>
+  <script src="../core/netguard.js"></script>
+  <script src="../core/frames.js"></script>
+  <script src="../core/dnsguard.js"></script>
+  <script src="../core/extract.js"></script>
+  <script src="../core/detect.js"></script>
+  <script src="../core/linkgroup.js"></script>
+  <script src="../core/robots.js"></script>
+  <script src="../core/docfetch.js"></script>
+  <script src="domparse.js"></script>
+  <script src="../core/quote.js"></script>
+  <script src="../core/versioning.js"></script>
+  <script src="../core/rules.js"></script>
+  <script src="../core/context.js"></script>
+  <script src="../core/analyze.js"></script>
+  <script src="../popup/db.js"></script>
+  <script src="explain.js"></script>
+</body>
+</html>
