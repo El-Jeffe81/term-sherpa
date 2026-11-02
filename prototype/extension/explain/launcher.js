@@ -1,6 +1,6 @@
 /*
- * launcher.js - the toolbar popup. Opening it IS the user's click (this is what grants activeTab for this tab).
- * It opens the Explain window and passes only the tab id. It reads nothing from the page and makes no network calls.
+ * launcher.js - the toolbar popup: the Term Sherpa name and one "Explain this page" button. Opening the popup IS the user's click (this is what
+ * grants activeTab for this tab); the button then opens the Explain window and passes only the tab id. It reads nothing from the page and makes no network calls.
  * chrome.windows needs no permission. If a window cannot be created (or the browser has no windows API) it falls back to a normal tab.
  */
 (function () {
@@ -8,7 +8,7 @@
   var status = document.getElementById('status');
   var again = document.getElementById('again');
   var tabId = null;
-  var onAgain = function () { openExplain().catch(function (e) { status.textContent = e.message; }); };
+  var onAgain = function () { openExplain().then(function () { if (typeof window !== 'undefined' && window.close) window.close(); }, function (e) { say(e.message); }); };
 
   // A small separate window where the browser has one; otherwise (Firefox for Android has no windows.create) a normal tab.
   async function openExplain() {
@@ -40,28 +40,24 @@
     await chrome.tabs.update(t.id, { active: true });
   }
 
+  // The popup shows one button. Opening the popup was the click that granted activeTab for this tab, so the button only has to open the window.
   async function start() {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     var tab = tabs && tabs[0];
-    if (!tab || tab.id === undefined) { status.textContent = 'No active tab found.'; return; }
-    if (!/^https?:/i.test(tab.url || '')) { status.textContent = 'I can only read normal web pages (http/https), not this kind of page.'; return; }
+    if (!tab || tab.id === undefined) { again.disabled = true; say('No active tab found.'); return; }
+    if (!/^https?:/i.test(tab.url || '')) { again.disabled = true; say('I can only read normal web pages (http/https), not this kind of page.'); return; }
     tabId = tab.id;
     var existing = await findOpen();
     if (existing) {
-      status.textContent = 'Your explanation window is already open'; status.hidden = false;
-      again.textContent = 'Bring it to the front';
-      again.hidden = false;
+      say('Your explanation window for this page is already open. The button brings it to the front.');
       onAgain = function () {
-        bringToFront(existing).then(function () { if (typeof window !== 'undefined' && window.close) window.close(); }, function (e) { status.textContent = e.message; });
+        bringToFront(existing).then(function () { if (typeof window !== 'undefined' && window.close) window.close(); }, function (e) { say(e.message); });
       };
-      return;
     }
-    await openExplain();
-    // nothing more to say: just the button (to open it again)
-    status.textContent = ''; status.hidden = true;
-    again.hidden = false;
   }
+  function say(msg) { status.textContent = msg; status.hidden = !msg; }
 
   again.addEventListener('click', function () { onAgain(); });
-  start().catch(function (e) { status.textContent = e.message; });
+  again.disabled = true; // until the active tab is known
+start().then(function () { again.disabled = !tabId; }, function (e) { say(e.message); });
 })();

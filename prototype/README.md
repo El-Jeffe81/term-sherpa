@@ -68,7 +68,7 @@ Not built (parked until Jeff decides): tracking what you have agreed to, and usi
 
 Older collection behaviour (still in the code; used only if you turn on "Save copies", or open the advanced popup). It does this on click, and only on click:
 - Injects a detector into the current tab with `chrome.scripting.executeScript` (permission `activeTab`; there is no
-  `content_scripts` entry in the manifest, and no up-front host permissions; v0.3.0 added only one optional `https://*/*` permission that is requested per site after a click, for the Explain window; v0.3.1 adds no permission: linked documents are fetched without following redirects and after a robots.txt check, see below).
+  `content_scripts` entry in the manifest, and no up-front host permissions; v0.3.0 added only one optional `https://*/*` permission that is requested per site after a click, for the Explain window; v0.3.1 and v1.1 add no permission: linked documents are fetched without following redirects, see below).
 - It lists terms / privacy / EULA / cookie links it finds (by link text, URL patterns and common paths such as
   `/terms`, `/privacy`; it only reports links that exist on the page, it never guesses URLs). Link text and URLs are
   recognised in English, Spanish, French, German, Portuguese and Italian; the language is shown, and PDF links are flagged.
@@ -123,7 +123,7 @@ CLI behaviour:
 - The user can export and delete everything from the popup.
 - Records carry `private_only = true`. Sharing or redistribution is blocked on a lawyer review (OPEN_QUESTIONS.md).
 - No model is bundled or downloaded. No third-party runtime dependency (PARTNERS.md).
-- Explain (v0.3.1): linked documents are never fetched through a redirect (`redirect:'manual'`: a redirecting page is shown as "not read" with its link, the target is never requested), bare IP addresses are refused, and `https://<site>/robots.txt` is read first (same guarded, cookie-less GET, 4 s timeout; user-agent `*`; a disallow skips the document and shows its link with the reason; missing, unreadable, slow or redirected robots.txt means allowed; kept in memory for that one analysis only). Why no `declarativeNetRequest`: it can fence redirects before they go out, but only with the "Block content on any page" install warning; the warning-free `declarativeNetRequestWithHostAccess` does not cover sites we have no access to. Evidence you can re-run: `npm run probe:dnr`.
+- Explain (v0.3.1): linked documents are never fetched through a redirect (`redirect:'manual'`: a redirecting page is shown as "not read" with its link, the target is never requested), bare IP addresses are refused, and since v1.1 there is no robots.txt check (the Explain window fetches only the one page you asked for, one at a time, rate limited, with no cookies, so it behaves like you opening the page; the command-line collector `cli/` still honours robots.txt). Why no `declarativeNetRequest`: it can fence redirects before they go out, but only with the "Block content on any page" install warning; the warning-free `declarativeNetRequestWithHostAccess` does not cover sites we have no access to. Evidence you can re-run: `npm run probe:dnr`.
 - Explain: the page is read on click with `activeTab`; the documents an agree dialog links to are fetched only after the click and a per-site Chrome permission prompt, logged out; analysis is fixed rules run inside the extension window; nothing is stored unless the user ticks "Save copies"; page text is shown with `textContent` only.
 
 ## Known limitations (honest list)

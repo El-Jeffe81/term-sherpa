@@ -226,8 +226,8 @@ try {
   assert.match(v1.status, /Nothing was saved/);
   assert.deepEqual(v1.points.map((c) => c.cls.split(' ').pop()), ['sev-High', 'sev-High', 'sev-Medium', 'sev-Medium', 'sev-Low', 'sev-Low', 'sev-Low'], 'ranked High, Medium, Low, with the dispute points merged into one');
   assert.deepEqual(v1.points.map((c) => c.sec), ['risk-list', 'risk-list', 'risk-list', 'risk-list', 'also-list', 'also-list', 'also-list']);
-  assert.ok(v1.points.every((c) => c.line.length > 10 && c.line.length < 120 && !c.open && c.toggle === 'Show exact wording' && c.quotes.length >= 1));
-  assert.ok(v1.points.every((c) => !c.quoteVisible), 'exact wording is collapsed by default');
+  assert.ok(v1.points.every((c) => c.line.length > 10 && c.line.length < 120 && c.open && c.toggle === 'Exact wording' && c.quotes.length >= 1));
+  assert.ok(v1.points.every((c) => c.quoteVisible), 'exact wording is open (visible) by default');
   for (const c of v1.points) for (const qt of c.quotes) assert.ok(terms.extracted.text.replace(/\s+/g, ' ').includes(qt.replace(/\s+/g, ' ')), 'quote is verbatim in the page text: ' + qt);
   assert.equal(v1.points[0].line, "Disputes go to private arbitration, and you can't join a class action lawsuit.");
   assert.ok(v1.points[0].quotes.some((x) => x.includes('individual arbitration')));
@@ -295,10 +295,10 @@ try {
     const seesOwn = JSON.parse(await launcher.ev(`chrome.tabs.query({}).then((ts) => JSON.stringify(ts.some((x) => (x.url || '').includes('/explain/explain.html?tab=${pgId}'))))`));
     if (!seesOwn && VIA_OPENER) {
       // Vivaldi hides every tab address from extensions that lack the tabs permission, so the launcher cannot know; it must fall back to its normal state
-      assert.equal(out.status, ''); assert.equal(out.statusHidden, true); assert.equal(out.hidden, false); assert.equal(out.btn, 'Open the explanation window');
-      ok('launcher (this browser hides tab addresses from the extension): falls back to a button only (no sentence): "Open the explanation window"');
+      assert.equal(out.status, ''); assert.equal(out.statusHidden, true); assert.equal(out.hidden, false); assert.equal(out.btn, 'Explain this page');
+      ok('launcher (this browser hides tab addresses from the extension): falls back to the one button only (no sentence): "Explain this page"');
     } else {
-      assert.equal(out.status, 'Your explanation window is already open'); assert.equal(out.btn, 'Bring it to the front'); assert.equal(out.hidden, false);
+      assert.match(out.status, /^Your explanation window for this page is already open/); assert.equal(out.btn, 'Explain this page'); assert.equal(out.hidden, false);
       if (process.env.TC_REVIEW) { // the toolbar popup in its real already-open state, at popup width
         await send('Emulation.setDeviceMetricsOverride', { width: 340, height: 230, deviceScaleFactor: 2, mobile: false }, L2.sessionId);
         await rshot(L2, 'launcher');
@@ -309,7 +309,7 @@ try {
       await L2.ev(`document.getElementById('again').click(), new Promise((r) => setTimeout(r, 600))`);
       assert.equal(await L2.ev('window.__closed'), 1, 'the launcher closes itself after bringing the window forward');
       assert.equal(await countExplain(), 1, 'Bring it to the front does not open a second window');
-      ok('launcher: with the explanation window already open it reads "Your explanation window is already open" with a "Bring it to the front" button, and does not open a second window');
+      ok('launcher: with the explanation window already open it says the window is already open, the one "Explain this page" button brings it forward, and no second window opens');
     }
     for (const t of [exw, L2]) await send('Target.closeTarget', { targetId: t.targetId }).catch(() => {});
   }
@@ -408,6 +408,7 @@ try {
     const gx = await openTab(`chrome-extension://${gid}/explain/explain.html`);
     await gx.ev('TCDB.clearAll().then(() => localStorage.clear())');
     const gview = async (res, extra) => JSON.parse(await gx.ev(`(async () => {
+      document.getElementById('welcome').hidden = true; document.getElementById('app').hidden = false; // first-run welcome is not what is under test here
       const out = await TCExplainUI.show(${JSON.stringify(res)});
       const point = (li) => ({ sec: li.closest('ul').id, cls: li.className.split(' ').pop(), line: li.querySelector('.line .text').textContent, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '',
         open: li.querySelector('details').open, labels: [...li.querySelectorAll('details .label')].map((n) => n.textContent), quotes: [...li.querySelectorAll('blockquote')].map((b) => b.textContent), visible: [...li.querySelectorAll('blockquote')].some((b) => b.checkVisibility()) });
@@ -431,11 +432,11 @@ try {
     assert.ok(arb && arb.src === 'Terms'); assert.ok(track && track.src === 'Terms + Privacy + Cookies', 'one tracking point, three sources: ' + (track && track.src));
     assert.equal(new Set(d.points.map((p) => p.line)).size, d.points.length, 'no repeated point');
     assert.ok(d.points.length <= 12);
-    assert.ok(d.points.every((p) => !p.open && !p.visible && p.quotes.length >= 1 && p.src), 'exact wording collapsed, every point labelled with its source');
+    assert.ok(d.points.every((p) => p.open && p.visible && p.quotes.length >= 1 && p.src), 'exact wording open by default and visible, every point labelled with its source ' + JSON.stringify([d.resultHidden, d.points.map((p) => [p.open, p.visible])]));
     assert.ok(track.labels.includes('From Terms:') && track.labels.includes('From Privacy:') && track.labels.includes('From Cookies:'));
     assert.match(d.docsSummary, /Documents read \(4 of 4\)/); assert.equal(d.docsOpen, false); assert.equal(d.docItems.length, 4);
     if (process.env.TC_DUMP) console.log(JSON.stringify({ summary: d.summary, status: d.status, points: d.points.map((p) => [p.cls, p.src, p.line]), docs: d.docItems }, null, 1));
-    ok('agree dialog -> ONE combined explanation of Terms + Privacy + Cookies + Community rules, source-labelled, deduplicated, wording collapsed');
+    ok('agree dialog -> ONE combined explanation of Terms + Privacy + Cookies + Community rules, source-labelled, deduplicated, wording open');
 
     // hostile linked document: its script / onerror must not run, its image must not load, its instructions are only data
     assert.equal(d.pwned, 'undefined'); assert.equal(d.elems, 0);
@@ -445,14 +446,14 @@ try {
 
     // the requests the extension made
     const mine = tlsHits.slice(hitsBefore);
-    assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/robots.txt', '/terms'], 'one request per document plus ONE robots.txt for the site, nothing else (no crawling, no favicon)');
+    assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/terms'], 'one request per document, nothing else (no robots.txt since v1.1, no crawling, no favicon)');
     for (const h of mine) {
       assert.equal(h.headers.cookie, undefined, 'logged out: no cookies sent although one exists for the site');
       assert.equal(h.headers.referer, undefined);
       assert.ok(/^Mozilla\/5\.0/.test(h.headers['user-agent']) && !/terms|guide|tc-/i.test(h.headers['user-agent']), 'the browser\'s own User-Agent');
       assert.equal(h.headers.authorization, undefined);
     }
-    ok('requests: one GET per document + one robots.txt for the site, no cookies (even with a session cookie present), no Referer, default User-Agent');
+    ok('requests: one GET per document (no robots.txt), no cookies (even with a session cookie present), no Referer, default User-Agent');
 
     // a JS-only linked document is said to be unreadable and its link is offered
     const withJs = JSON.parse(JSON.stringify(home));
@@ -466,7 +467,7 @@ try {
     assert.ok(!tlsHits.some((h) => /internal/.test(h.url)));
     ok('JS-only document -> "needs JavaScript" with its link offered; a non-https / loopback link is refused and never requested');
 
-    // robots.txt disallow and redirects: skipped / not followed, with the link offered, and the other documents still read
+    // a robots.txt that disallows the page does NOT block it (v1.1); redirects: not followed, with the link offered, and the other documents still read
     const withRedir = JSON.parse(JSON.stringify(home));
     withRedir.consent.links = withRedir.consent.links.filter((l) => /\/(terms|privacy)$/.test(l.url));
     for (const [pth, text] of [['blocked-by-robots', 'Blocked Policy'], ['moved-terms', 'Moved Terms'], ['moved-offsite', 'Offsite Terms']]) {
@@ -474,13 +475,13 @@ try {
     }
     const before2 = tlsHits.length;
     const rd = await gview(withRedir);
-    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 3);
-    assert.ok(rd.docItems.some((t) => /Blocked Policy/.test(t) && /not read: the site's robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.docItems));
+    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 3); assert.equal(rd.unread, 2);
+    assert.ok(!rd.docItems.some((t) => /Blocked Policy/.test(t) && /not read/.test(t)), 'robots.txt Disallow no longer stops a page the user asked for: ' + JSON.stringify(rd.docItems));
     assert.ok(rd.docItems.some((t) => /Moved Terms/.test(t) && /not read: this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.docItems));
     assert.ok(rd.docItems.some((t) => /Offsite Terms/.test(t) && /not read: this link sends you to another page/.test(t) && /Open this page/.test(t)));
     const hits2 = tlsHits.slice(before2).map((h) => h.url).sort();
-    assert.deepEqual(hits2, ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets (/redirect-trap and the same-site /terms hop) never requested; each redirecting URL requested once');
-    ok('robots.txt disallow -> page never requested, link + reason shown; redirects (same-site and off-site) are not followed, never requested, link shown; the rest still read');
+    assert.deepEqual(hits2, ['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/terms'], 'no robots.txt request, the robots-disallowed page is simply read; redirect targets (/redirect-trap and the same-site /terms hop) never requested; each redirecting URL requested once');
+    ok('no robots.txt request or check (a Disallow page is read); redirects (same-site and off-site) are not followed, never requested, link shown; the rest still read');
 
     // list mode: regional duplicates collapsed, three shown, the rest behind a toggle, and the dialog result still works for a banner
     const pc = await runIn(site.base + '/privacy-center', {});

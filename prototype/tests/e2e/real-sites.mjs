@@ -45,6 +45,11 @@ export const SITES = [
   { name: 'dropbox-register', kind: 'sign-up with agree text', url: 'https://www.dropbox.com/register', expect: 'banner' },
   { name: 'airbnb-terms', kind: 'JS heavy terms', url: 'https://www.airbnb.com/help/article/2908', expect: 'explained' },
   { name: 'tiktok-terms', kind: 'JS heavy terms', url: 'https://www.tiktok.com/legal/page/us/terms-of-service/en', expect: 'explained' },
+  // v1.1 live checks: a news home page whose footer links to Terms and Privacy (one of them leaves the site), and a plain same-site policy
+  { name: 'cnn-home', kind: 'news site home: footer links to Terms of Use and Privacy', url: 'https://www.cnn.com/', expect: 'banner', click: ['Terms of Use', 'Privacy Policy'] },
+  { name: 'cnn-terms', kind: 'news terms page', url: 'https://www.cnn.com/terms', expect: 'explained' },
+  { name: 'cnn-privacy', kind: 'news privacy link that leaves the site (cross-domain redirect)', url: 'https://www.cnn.com/privacy', expect: 'explained' },
+  { name: 'bbc-terms', kind: 'normal same-site terms (a hub: click "Explain this" on its documents)', url: 'https://www.bbc.co.uk/usingthebbc/terms', expect: 'explained', click: ['Terms of Use', 'Privacy Policy'] },
   { name: 'wikipedia-tos-article', kind: 'NOT a terms page (article about terms)', url: 'https://en.wikipedia.org/wiki/Terms_of_service', expect: 'none' },
   { name: 'example-com', kind: 'NOT a terms page (control)', url: 'https://example.com/', expect: 'none' }
 ];
@@ -56,7 +61,9 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-real-'));
 const grantedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-ext-real-'));
 fs.cpSync(EXT, grantedDir, { recursive: true });
 { const m = JSON.parse(fs.readFileSync(path.join(grantedDir, 'manifest.json'), 'utf8')); m.host_permissions = m.optional_host_permissions; delete m.optional_host_permissions; fs.writeFileSync(path.join(grantedDir, 'manifest.json'), JSON.stringify(m, null, 2)); }
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-pipe', '--enable-unsafe-extension-debugging',
+// headless Chrome announces itself as "HeadlessChrome" and some sites (cnn.com) then answer with an empty page; send the normal Chrome UA, as the real browser does
+const CHROME_VER = ((require('node:child_process').spawnSync(CHROME, ['--version']).stdout || '').toString().match(/(\d+\.\d+\.\d+\.\d+)/) || [])[1] || '120.0.0.0';
+const chrome = spawn(CHROME, ['--headless=new', `--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VER} Safari/537.36`, '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-pipe', '--enable-unsafe-extension-debugging',
   '--window-size=1280,900', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let id = 0; const pending = new Map(); const exceptions = []; let buf = '';
 chrome.stdio[4].on('data', (d) => { buf += d.toString('utf8'); let i; while ((i = buf.indexOf('\0')) >= 0) { const msg = buf.slice(0, i); buf = buf.slice(i + 1); onMessage(JSON.parse(msg)); } });
@@ -122,6 +129,26 @@ try {
         docs: [...document.querySelectorAll('details.docs li')].map((n) => n.textContent.slice(0, 160)), visibleLen: document.getElementById('result').innerText.length })`));
       Object.assign(row, { quotes: out.quotes, status: out.status, statusErr: out.err, explained: !out.resultHidden, summary: out.summary, risks: out.risks, also: out.also, riskCount: out.risks.length + out.also.length, highCount: out.risks.filter((r) => /^High/.test(r)).length,
         nothingFound: out.nothingFound, framesNote: out.framesNote, docs: out.docs });
+      // 2b) v1.1 live check: press "Explain this" on named candidates, exactly as a person would, and record what the window shows each time
+      if (site.click) {
+        row.clicks = [];
+        // headless Chrome cannot show the permission prompt; the throw-away copy already holds https://*/* (see top of file), so answering 'yes' here is the honest stand-in
+        await win.ev(`chrome.permissions.request = async () => true`);
+        for (const label of site.click) {
+          const clicked = await win.ev(`(() => { const li = [...document.querySelectorAll('#candidate-list li')].find((x) => (x.querySelector('strong') || {}).textContent.indexOf(${JSON.stringify(label)}) === 0); const b = li && [...li.querySelectorAll('button')].find((x) => x.textContent === 'Explain this'); if (b) { document.getElementById('status').textContent = 'Reading...'; b.click(); return li.querySelector('.url').textContent; } return null; })()`);
+          if (!clicked) { row.clicks.push({ label, clicked: false, candidates: await win.ev(`[...document.querySelectorAll('#candidate-list li')].map((x) => x.textContent.slice(0, 80))`).catch(() => null) }); continue; }
+          let l2 = '', st2 = 0;
+          for (let i = 0; i < 160 && st2 < 6; i++) { const st = await win.ev(`document.getElementById('status').textContent`).catch(() => ''); if (st === l2 && !/^(Reading|Waiting)/.test(st) && st) st2++; else st2 = 0; l2 = st; await sleep(250); }
+          const c = JSON.parse(await win.ev(`JSON.stringify({ status: document.getElementById('status').textContent, resultShown: !document.getElementById('result').hidden, summary: [...document.querySelectorAll('#overview-summary li')].map((n) => n.textContent),
+            findings: document.querySelectorAll('#risk-list li.point').length, findingsOpen: [...document.querySelectorAll('#risk-list li.point details')].every((d) => d.open),
+            unreadNotice: document.getElementById('unread').hidden ? null : document.getElementById('unread').innerText, docsReadOpen: document.getElementById('docs-read').open, candidatesOpen: document.getElementById('candidates').open })`));
+          const slug = site.name + '-' + label.toLowerCase().replace(/[^a-z]+/g, '-');
+          await send('Target.activateTarget', { targetId: win.targetId }).catch(() => {});
+          const shc = await withTimeout(send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, win.sessionId), 20000, 'click screenshot').catch(() => null); if (shc) fs.writeFileSync(path.join(OUT, slug + '.png'), Buffer.from(shc.data, 'base64'));
+          row.clicks.push(Object.assign({ label, clicked: true, url: clicked, shot: slug + '.png' }, c));
+          await win.ev(`(() => { const s = document.getElementById('candidates'); s.open = true; })()`).catch(() => {});
+        }
+      }
       await send('Target.activateTarget', { targetId: win.targetId }).catch(() => {}); const sh = await withTimeout(send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, win.sessionId), 20000, 'explain screenshot'); fs.writeFileSync(path.join(OUT, site.name + '.png'), Buffer.from(sh.data, 'base64'));
       await send('Target.activateTarget', { targetId: page.targetId }).catch(() => {}); const sp = await withTimeout(send('Page.captureScreenshot', { format: 'png' }, page.sessionId), 15000, 'page screenshot').catch(() => null); if (sp) fs.writeFileSync(path.join(OUT, site.name + '-page.png'), Buffer.from(sp.data, 'base64'));
       dbg('shots done');

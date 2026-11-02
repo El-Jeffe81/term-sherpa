@@ -25,11 +25,14 @@
   <div id="status" role="status" aria-live="polite">Reading the page...</div>
 
   <main id="result" hidden>
-    <section id="overview" aria-label="Overview">
+    <!-- (a) Summary: site, service type, overall read -->
+    <section id="overview" aria-labelledby="h-summary">
+      <h2 id="h-summary">Summary</h2>
       <ul id="overview-summary" class="overview"></ul>
       <p id="overview-note" class="muted" hidden></p>
     </section>
 
+    <!-- (b) Worth knowing: every finding open, with its exact wording -->
     <section id="risks" aria-labelledby="h-risks">
       <h2 id="h-risks">Worth knowing</h2>
       <ul id="risk-list" class="points"></ul>
@@ -45,6 +48,13 @@
     <p class="muted" id="footnote">Severity is a rough guide from fixed rules, not a verdict.</p>
   </main>
 
+  <!-- (c) Any document that could not be read: amber notice with the plain reason -->
+  <section id="unread" class="amber" role="alert" hidden aria-labelledby="unread-head">
+    <h2 id="unread-head">A document could not be read</h2>
+    <p id="unread-lead"></p>
+    <ul id="unread-list" class="plain"></ul>
+  </section>
+
   <section id="frames" hidden>
     <h2>Part of this page is in a frame I can't read</h2>
     <p id="frames-text"></p>
@@ -59,17 +69,18 @@
     <p class="muted">Nothing is allowed in advance. You can remove the access again under Options.</p>
   </section>
 
+  <!-- (d) Documents read, and Legal documents on this page: both collapsed, at the bottom -->
   <details id="docs-read" class="docs" hidden>
     <summary id="docs-count">Documents read</summary>
     <ul id="docs-list" class="plain"></ul>
   </details>
 
-  <section id="candidates" hidden>
-    <h2>Legal documents on this page</h2>
+  <details id="candidates" class="docs" hidden>
+    <summary id="candidates-head">Legal documents on this page</summary>
     <ul id="candidate-list"></ul>
     <p><button id="candidate-more" hidden>Show more</button> <button id="candidate-all" hidden>Explain all of these together</button></p>
     <p class="muted">"Explain this" reads that one document for you (your browser asks once to allow the site). "Open this page" opens it in a tab; click the Term Sherpa icon there. Only a link you open is remembered, for one hour.</p>
-  </section>
+  </details>
 
   <section id="paste" hidden>
     <h2>I couldn't find any terms links</h2>
@@ -100,7 +111,6 @@
   <script src="../core/extract.js"></script>
   <script src="../core/detect.js"></script>
   <script src="../core/linkgroup.js"></script>
-  <script src="../core/robots.js"></script>
   <script src="../core/docfetch.js"></script>
   <script src="domparse.js"></script>
   <script src="../core/quote.js"></script>

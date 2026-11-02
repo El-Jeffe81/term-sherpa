@@ -1,5 +1,7 @@
 /*
- * robots.js - the robots.txt check the Explain window runs before it reads a linked document.
+ * robots.js - NOT USED by the extension since v1.1 (nothing loads it; the Explain window no longer consults robots.txt for the one page a person asked
+ * for with a click). Kept only so its unit tests keep passing; safe to delete in a follow-up.
+ * It was the robots.txt check the Explain window ran before it read a linked document.
  *
  * What it does (and covered by tests/robots-check.test.js):
  *   - fetches https://<site>/robots.txt the same guarded way as a document: https only, credentials omitted (no cookies),

@@ -11,10 +11,10 @@ the CLI, mode 600). There is no central collection, no upload, no analytics. Rec
 - It reads nothing until the user clicks. Permissions: `activeTab` + `scripting`; no content scripts,
   no background worker. Since v0.3.0 the Explain window may fetch the documents an agree dialog links to, using one *optional*
   host permission (`https://*/*`) that is requested per site at click time (see `implementation.md`); the fetch code is
-  `extension/core/docfetch.js` plus the robots.txt reader `extension/core/robots.js` (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
+  `extension/core/docfetch.js` (https, guarded, logged-out, size/time limits) and a test pins that no other module uses `fetch`.
   Since v0.3.1 redirects are never followed (`redirect:'manual'`; the redirect target is never requested, so a document cannot bounce the
-  extension to localhost, a private or another address), bare IP-address hosts are refused, and `robots.txt` is checked first
-  (user-agent `*`, fail-open on missing/unreadable/slow, in-memory for one analysis). The manifest deliberately has no
+  extension to localhost, a private or another address) and bare IP-address hosts are refused. Since v1.1 the extension does not consult
+  `robots.txt` (it fetches only the page a person asked for with a click, one at a time, rate limited, without cookies); the CLI still does. The manifest deliberately has no
   `declarativeNetRequest*` permission: the variant that could vet redirects up front shows the install warning "Block content on any page",
   and the warning-free variant cannot cover unpermitted sites (measured in headless Chrome: `npm run probe:dnr`).
 - **Only the terms document itself is saved**, never the page the user happens to be on.
@@ -76,6 +76,6 @@ Sanitising and flagging reduce the risk; they do not remove it. Rule 2 (no tools
 
 ## Other browsers (Edge, Brave, Opera, Vivaldi, Firefox)
 The same guards apply in every package because the code is shared byte for byte. Checked in the headless e2e of each browser (see `docs/BROWSER_TESTING.md`):
-https only, no cookies / Referer / Authorization sent, redirects not followed (the redirect target is never requested), robots.txt honoured, loopback and plain-http links refused,
+https only, no cookies / Referer / Authorization sent, redirects not followed (the redirect target is never requested), no robots.txt request, loopback and plain-http links refused,
 a hostile linked document stays inert text, and the granted site access can be removed again. Firefox adds one thing to remember: the optional `https://*/*` permission is declared
 exactly as in Chrome and is prompted per site on a click; the Firefox manifest also declares `data_collection_permissions: none`. Not covered: the real permission prompt UI and a human toolbar click in any browser.
