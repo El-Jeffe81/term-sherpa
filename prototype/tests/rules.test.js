@@ -700,14 +700,8 @@ test('data_sharing evidence: rights notes, headings, quoted defined terms and me
   assert.equal(f('Selling your personal information to data brokers is something we may do.') !== null, true, 'a real sale sentence still counts');
 });
 
-test('hosted-elsewhere: a policy read from an unrelated site gets a Medium finding with its host and no quotation; absent otherwise', () => {
-  const docs = () => [{ text: 'We may share your personal information with third parties.', doc_type: 'privacy', label: 'Privacy Policy' }];
-  const none = analyzeDocuments(docs(), { host: 'www.cnn.com', via: 'dialog' });
-  assert.ok(!none.findings.some((f) => f.id === 'hosted-elsewhere'));
-  const a = analyzeDocuments(docs(), { host: 'www.cnn.com', via: 'dialog', hostedElsewhere: [{ label: 'Privacy Policy', host: 'www.wbdprivacy.com' }] });
-  const f = a.findings.find((x) => x.id === 'hosted-elsewhere');
-  assert.ok(f, 'finding present');
-  assert.equal(f.line, 'This policy is hosted on an unrelated site (www.wbdprivacy.com), which is unusual.');
-  assert.equal(f.severity, 'Medium'); assert.deepEqual(f.evidence, []); assert.deepEqual(f.sources, ['Privacy Policy']);
-  assert.equal(f.section, 'risk', 'listed with the things worth knowing');
+test('the unrelated-site note is not an analysis finding any more (it is shown under "Read from <host>" by the window)', () => {
+  const docs = [{ text: 'We may share your personal information with third parties.', doc_type: 'privacy', label: 'Privacy Policy' }];
+  const a = analyzeDocuments(docs, { host: 'www.cnn.com', via: 'dialog', hostedElsewhere: [{ label: 'Privacy Policy', host: 'www.wbdprivacy.com' }] });
+  assert.ok(!a.findings.some((f) => f.id === 'hosted-elsewhere' || /hosted on/.test(f.line)), 'never mixed in with the terms findings');
 });

@@ -489,22 +489,26 @@ try {
     crossRes.page = { url: 'https://www.newsco.test/home' };
     crossRes.consent.links = [['terms', 'Terms'], ['moved-cross', 'Privacy Policy'], ['moved-sub', 'Legal Hub Terms']].map(([pth, text]) => ({ url: 'https://docs.newsco.test/' + pth, text, doc_type: pth === 'moved-cross' ? 'privacy' : 'tos', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 }));
     const snapCross = (kind) => `(async () => { const out = await TCExplainUI.show(${JSON.stringify(crossRes)}); return JSON.stringify({ kind: out.kind, readFrom: [...document.querySelectorAll('#read-from li')].map((n) => n.textContent), readFromHidden: document.getElementById('read-from').hidden,
-      points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, details: li.querySelectorAll('details').length, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '' })),
+      points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent })),
+      notes: [...document.querySelectorAll('#read-from li')].map((li) => ({ own: li.firstChild.textContent, note: li.querySelector('.hosted-note') ? li.querySelector('.hosted-note').textContent : null, sev: li.querySelector('.hosted-note .badge') ? li.querySelector('.hosted-note .badge').textContent : null, noteIsLastChild: !!li.querySelector('.hosted-note') && li.lastChild === li.querySelector('.hosted-note') })),
       docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')), optinHidden: document.getElementById('optin').hidden, unreadHidden: document.getElementById('unread').hidden }); })()`;
     const cr = JSON.parse(await gx.ev(snapCross()));
     assert.equal(cr.kind, 'documents');
-    assert.ok(cr.readFrom.includes('Privacy: Read from policies.otherco.test') && cr.readFrom.includes('Legal Hub Terms: Read from legal.newsco.test'), JSON.stringify(cr.readFrom));
+    assert.ok(cr.readFrom.some((t) => t.startsWith('Privacy: Read from policies.otherco.test')) && cr.readFrom.some((t) => t.startsWith('Legal Hub Terms: Read from legal.newsco.test')), JSON.stringify(cr.readFrom));
     assert.equal(cr.readFromHidden, false); assert.equal(cr.optinHidden, true); assert.equal(cr.unreadHidden, true);
-    const unrelated = cr.points.filter((p) => /hosted on an unrelated site/.test(p.line));
-    assert.deepEqual(unrelated.map((p) => p.line), ['This policy is hosted on an unrelated site (policies.otherco.test), which is unusual.'], JSON.stringify(unrelated));
-    assert.equal(unrelated[0].details, 0, 'a finding about where it is hosted has no quotation'); assert.equal(unrelated[0].src, 'Privacy');
+    // the note sits directly under that document's own "Read from" line (Low), only for the other owner, and is NOT in the findings list
+    assert.ok(!cr.points.some((p) => /hosted on/.test(p.line)), 'not mixed in with the terms findings: ' + JSON.stringify(cr.points));
+    const wantNote = "LowThis policy is hosted on a different site (policies.otherco.test). Check that it belongs to the company you're dealing with.";
+    const pn = cr.notes.find((n) => /^Privacy: Read from policies\.otherco\.test/.test(n.own));
+    assert.ok(pn && pn.note === wantNote && pn.sev === 'Low' && pn.noteIsLastChild, JSON.stringify(cr.notes));
+    assert.ok(cr.notes.filter((n) => n.note).length === 1 && cr.notes.find((n) => /legal\.newsco\.test/.test(n.own)).note === null, 'same owner: no note: ' + JSON.stringify(cr.notes));
     assert.ok(cr.docItems.some((t) => /Privacy/.test(t) && /Read from policies\.otherco\.test/.test(t)) && cr.docItems.some((t) => /Legal Hub Terms/.test(t) && /Read from legal\.newsco\.test/.test(t)), JSON.stringify(cr.docItems));
     if (process.env.TC_UI_SHOTS) { fs.mkdirSync(process.env.TC_UI_SHOTS, { recursive: true }); const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, gx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'read-from-and-unrelated-finding.png'), Buffer.from(sh.data, 'base64')); }
     if (process.env.TC_UI_SHOTS) { // a close-up of the unrelated-site finding itself
-      const r = JSON.parse(await gx.ev("(() => { const li = [...document.querySelectorAll('li.point')].find((n) => /hosted on an unrelated site/.test(n.textContent)); const b = li.getBoundingClientRect(); return JSON.stringify({ x: 0, y: b.top + scrollY - 70, width: innerWidth, height: b.height + 100 }); })()"));
+      const r = JSON.parse(await gx.ev("(() => { const li = [...document.querySelectorAll('#read-from li')].find((n) => /hosted on a different site/.test(n.textContent)); const b = li.getBoundingClientRect(); return JSON.stringify({ x: 0, y: Math.max(0, b.top + scrollY - 40), width: innerWidth, height: b.height + 80 }); })()"));
       const sh2 = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...r, scale: 1 } }, gx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'unrelated-site-finding.png'), Buffer.from(sh2.data, 'base64'));
     }
-    ok('all-sites access: a link that leads to another host shows "Read from <host>" (top of results and documents list); the unrelated-site finding appears for policies.otherco.test only, not for the same owner\'s legal.newsco.test');
+    ok('all-sites access: a link that leads to another host shows "Read from <host>" (top of results and documents list); the Low unrelated-site note sits under its Read from line for policies.otherco.test only, not for the same owner\'s legal.newsco.test');
 
     // A page larger than 8 MB: the first 8 MB are read, the amber "Only part of this document was read." notice is shown (no rejection)
     const hugeRes = JSON.parse(JSON.stringify(home)); hugeRes.consent.links = [{ url: 'https://docs.newsco.test/huge-terms', text: 'Terms', doc_type: 'tos', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 }];
@@ -604,13 +608,14 @@ try {
         await nx.ev("document.getElementById('welcome').hidden = true; document.getElementById('app').hidden = false; chrome.storage.local.remove('tc.allSitesDeclined'); 1");
         const nbefore = tlsHits.length;
         const nsnap = () => nx.ev(`(async () => { const out = await TCExplainUI.show(${JSON.stringify(nres)}); return JSON.stringify({ kind: out.kind, read: out.read, unread: out.unread, optinHidden: document.getElementById('optin').hidden, optinHead: document.getElementById('optin-head').textContent, optinText: document.getElementById('optin-text').textContent,
-          optinBtns: [...document.querySelectorAll('#optin button')].map((b) => b.textContent), unreadHidden: document.getElementById('unread').hidden, unreadHead: document.getElementById('unread-head').textContent, unreadText: document.getElementById('unread-list').innerText,
+          optinBtns: [...document.querySelectorAll('#optin button')].map((b) => b.textContent), unreadHidden: document.getElementById('unread').hidden, unreadHead: document.getElementById('unread-head').textContent, unreadText: document.getElementById('unread-list').innerText, unreadBold: document.querySelector('#unread-list strong').textContent,
           readItBtns: [...document.querySelectorAll('#unread-list button')].map((b) => b.textContent), docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')), status: document.getElementById('status').textContent,
           allSites: document.getElementById('all-sites').checked, granted: (await chrome.permissions.getAll()).origins }); })()`).then(JSON.parse);
         const n1 = await nsnap();
         assert.equal(n1.kind, 'documents'); assert.equal(n1.read, 2, 'the same-site redirect works without all-sites access: ' + JSON.stringify(n1.docItems)); assert.equal(n1.unread, 1);
         assert.equal(n1.unreadHead, "1 document couldn't be read");
-        assert.ok(/Privacy wasn't read\. Its link goes to another site, which Term Sherpa doesn't follow yet\.\s*Open it and click Term Sherpa there\./.test(n1.unreadText.replace(/\s+/g, ' ')), JSON.stringify(n1.unreadText));
+        assert.ok(n1.unreadText.replace(/\s+/g, ' ').includes("Privacy wasn't read. Its link goes to another site. Allow all sites above, or open it and click Term Sherpa there."), JSON.stringify(n1.unreadText));
+        assert.equal(n1.unreadBold, "Privacy wasn't read.", 'only the first sentence is bold, with the real label');
         assert.ok(!/sends you to another page/.test(n1.unreadText + JSON.stringify(n1.docItems)), 'the old developer-ish wording is gone');
         assert.deepEqual(n1.readItBtns, ['Read it']);
         assert.equal(n1.optinHidden, false); assert.equal(n1.optinHead, "Read policies wherever they're hosted");

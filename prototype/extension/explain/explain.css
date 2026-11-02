@@ -44,6 +44,7 @@ li.point .src { margin-left: 6px; font-size: 11px; color: #555; border: 1px soli
 #optin h2 { border: 0; margin-top: 8px; }
 #optin .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; } #optin .row button.primary { width: auto; flex: 1 1 160px; }
 ul.readfrom { list-style: none; padding: 0; margin: 4px 0 10px; font-size: 14px; color: #1d3b66; } ul.readfrom li { margin: 2px 0; } ul.readfrom li:before { content: '\2192  '; }
+ul.readfrom .hosted-note { margin: 3px 0 6px 18px; color: #333; font-size: 13px; }
 details.docs { margin: 8px 0; } details.docs summary { cursor: pointer; color: #1a5fb4; font-size: 13px; }
 details.docs ul { list-style: none; padding: 0; } details.docs li { border-top: 1px solid #eee; padding: 4px 0; }
 .warn { color: #8a5200; }

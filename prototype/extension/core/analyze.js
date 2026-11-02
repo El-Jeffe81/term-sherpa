@@ -278,7 +278,7 @@
   /*
    * analyzeDocuments(docs, meta) -> ONE combined result for several documents.
    *   docs: [{ text, doc_type, label }]   label is the short source name shown next to each point ("Terms", "Privacy" ...)
-   *   meta: { host, title, context, via, unread: [{label, reason}], hostedElsewhere: [{label, host}] }
+   *   meta: { host, title, context, via, unread: [{label, reason}] }
    * Same rules, same context step, same floor. A point made in more than one document is one finding that lists every
    * source. Findings carry `sources` (labels) and each quote carries `source`.
    */
@@ -302,15 +302,6 @@
 
     var findings = mergeGroups(ruleHits);
     applyContext(findings, ctx.type);
-    sortFindings(findings);
-    // A policy that was read from a site unrelated to the page it was linked from (meta.hostedElsewhere: [{label, host}]): a finding, never a block.
-    (meta.hostedElsewhere || []).forEach(function (h) {
-      findings.push({
-        id: 'hosted-elsewhere', rules: ['hosted-elsewhere'], title: 'Hosted on an unrelated site', severity: 'Medium', baseSeverity: 'Medium', priority: 900,
-        line: 'This policy is hosted on an unrelated site (' + String(h.host) + '), which is unusual.', explain: '', totalMatches: 0, evidence: [], mitigation: null, contextNote: '',
-        sources: h.label ? [String(h.label)] : []
-      });
-    });
     sortFindings(findings);
     findings.forEach(function (f) { f.section = f.severity === 'Low' ? 'also' : 'risk'; });
 

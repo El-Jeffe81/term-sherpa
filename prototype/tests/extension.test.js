@@ -202,7 +202,7 @@ test('explain: order is Summary, Worth knowing, amber "could not be read" notice
   // script: the documents-read box is collapsed by script too; the amber notice says plainly why; robots.js is not loaded
   const js = explainSrc();
   assert.match(js, /box\.open = false;/);
-  assert.match(js, /renderUnreadNotice/); assert.match(js, /wasn't read\./); assert.match(js, /documents couldn't be read/);
+  assert.match(js, /renderUnreadNotice/); assert.match(js, /wasn't read\./); assert.match(js, /Allow all sites above, or open it and click Term Sherpa there\./); assert.match(js, /This policy is hosted on a different site \(/); assert.match(js, /Check that it belongs to the company you're dealing with\./); assert.doesNotMatch(js, /hosted on an unrelated site/); assert.match(js, /documents couldn't be read/);
   assert.ok(!/robots\.js/.test(html), 'robots.js is not loaded by the Explain page');
   const css = fs.readFileSync(path.join(EXT, 'explain', 'explain.css'), 'utf8');
   assert.match(css, /#unread\b[^{]*\{[^}]*(#?[a-f0-9]{3,6}|amber|orange)/i, 'the notice has amber styling');

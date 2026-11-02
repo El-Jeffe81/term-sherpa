@@ -165,13 +165,15 @@
 
   // What to tell a person to do about a document that could not be read, in plain words.
   function unreadAdvice(it) {
-    if (it.needs_all_sites) return 'Open it and click Term Sherpa there.';
+    if (it.needs_all_sites) return allSitesNow ? 'Open it and click Term Sherpa there.' : ''; // without all-sites access the advice is part of the sentence
     if (it.needs_js) return 'Open it, then click Term Sherpa there and I will explain what is on the screen.';
     return '';
   }
+  var allSitesNow = false; // whether all-sites access was on for the read being shown (set by explainLinks)
   // Plain words for why one document was not read (the amber notice and the documents list).
   function unreadWhy(it) {
-    if (it.needs_all_sites) return "Its link goes to another site, which Term Sherpa doesn't follow yet.";
+    // Link goes to another site and all-sites access is off: say how to fix it. With all-sites access already on, that is not the reason: say what is accurate.
+    if (it.needs_all_sites) return allSitesNow ? 'Its link goes to another site that could not be read.' : 'Its link goes to another site. Allow all sites above, or open it and click Term Sherpa there.';
     if (it.unsafe) return "Its link goes to an address Term Sherpa won't open.";
     if (it.needs_js) return "Its text only appears after the page runs JavaScript, which Term Sherpa doesn't run.";
     var r = String(it.reason || 'it could not be read').replace(/^not read: /, '').replace(/^not opened: /, '');
@@ -215,11 +217,21 @@
     box.hidden = cut.length === 0;
   }
   // "Read from <host>": shown at the top of the results for every document whose link led to another host. The host comes from the answer itself.
-  function renderReadFrom(items) {
+  // When that host belongs to someone unrelated to the page, a Low note sits directly under that document's line (not in the findings list).
+  function renderReadFrom(items, pageHost) {
     var list = $('read-from'); clear(list);
     var moved = items.filter(function (x) { return x.ok && x.read_from; });
     var many = items.filter(function (x) { return x.ok; }).length > 1;
-    moved.forEach(function (it) { list.appendChild(el('li', (many ? (it.label || 'Document') + ': ' : '') + 'Read from ' + it.read_from)); });
+    moved.forEach(function (it) {
+      var li = el('li', (many ? (it.label || 'Document') + ': ' : '') + 'Read from ' + it.read_from);
+      if (TCPsl.unrelatedPolicyHost(pageHost, it.read_from)) {
+        var note = el('div', undefined, 'hosted-note');
+        note.appendChild(sevBadge('Low'));
+        note.appendChild(document.createTextNode('This policy is hosted on a different site (' + it.read_from + "). Check that it belongs to the company you're dealing with."));
+        li.appendChild(note);
+      }
+      list.appendChild(li);
+    });
     list.hidden = moved.length === 0;
   }
 
@@ -341,23 +353,22 @@
     var results = await TCDocFetch.fetchAll(prep.accepted, fetchDeps(allSites), function (i, n, d) { setStatus('Reading ' + (i + 1) + ' of ' + n + ': ' + d.label + '...'); });
     var read = results.filter(function (r) { return r.ok; });
     var unread = results.filter(function (r) { return !r.ok; }).concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }));
+    allSitesNow = allSites;
     renderDocuments(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); })));
     // A link that left the site could not be read with per-site access only: explain the all-sites choice once (unless "Not now" was chosen before).
     if (!allSites && results.some(function (r) { return r.needs_all_sites; }) && !(await allSitesDeclined())) { optin = { links: links, ctx: ctx }; $('optin').hidden = false; }
-    renderReadFrom(read);
+    var pageHost = hostnameOf('https://' + (ctx.host || ''));
+    renderReadFrom(read, pageHost);
     if (!read.length) {
       setStatus('I could not read ' + (results.length + prep.rejected.length > 1 ? 'any of these documents' : 'this document') + ' (see the notice below).', true);
       showCandidates(ctx.all || links, ctx);
       return { kind: 'unreadable', unread: unread.map(function (u) { return u.label + ': ' + u.reason; }) };
     }
-    // A policy read from a site unrelated to the page it was linked from is a finding (never a block); known policy services and the page's own sites are not.
-    var pageHost = hostnameOf('https://' + (ctx.host || ''));
-    var elsewhere = read.filter(function (r) { return r.read_from && TCPsl.unrelatedPolicyHost(pageHost, r.read_from); }).map(function (r) { return { label: r.label, host: r.read_from }; });
     var analysis = TCAnalyze.analyzeDocuments(read.map(function (r) { return { text: r.text, doc_type: r.doc_type, label: r.label, url: r.url }; }),
-      { host: ctx.host, via: ctx.via, hostedElsewhere: elsewhere,
+      { host: ctx.host, via: ctx.via,
         unread: unread.filter(function (u) { return !u.redirect; }).map(function (u) { return { label: u.label, reason: u.reason }; }) });
     renderAnalysis(analysis);
-    renderReadFrom(read);
+    renderReadFrom(read, pageHost);
     var msg = 'Done. Read ' + read.length + (read.length === 1 ? ' document' : ' documents') + '. Nothing was saved.' + TCAnalyze.languageNote(read);
     if (saveEnabled()) {
       try {
