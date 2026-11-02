@@ -179,7 +179,7 @@ try {
   const sale = by(/sell your personal data/), arb = by(/private arbitration/), track = by(/track your activity/);
   assert.ok(sale && /sev-High/.test(sale.cls) && sale.src === 'Privacy', 'data sale found in the Privacy policy');
   assert.ok(arb && arb.src === 'Terms'); assert.ok(track && track.src === 'Terms + Privacy + Cookies');
-  assert.ok(view.points.every((p) => !p.open && p.quotes >= 1 && p.src), 'exact wording collapsed, every point labelled with its source');
+  assert.ok(view.points.every((p) => p.open && p.quotes >= 1 && p.src), 'exact wording open by default, every point labelled with its source');
   assert.equal(new Set(view.points.map((p) => p.line)).size, view.points.length);
   assert.match(view.docs, /Documents read \(4 of 4\)/);
   ok('agree dialog -> ONE combined explanation of Terms + Privacy + Cookies + Community rules (permission requested by click, documents fetched by the guarded fetch)');
@@ -188,17 +188,17 @@ try {
   ok('hostile linked document: its script / onerror did not run, its image never loaded, only text was used');
 
   const mine = tlsHits.slice(hitsBefore);
-  assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/robots.txt', '/terms'], 'one GET per document plus one robots.txt');
+  assert.deepEqual(mine.map((h) => h.url).sort(), ['/community-guidelines', '/cookies', '/privacy', '/terms'], 'one GET per document, no robots.txt');
   for (const h of mine) {
     assert.equal(h.headers.cookie, undefined); assert.equal(h.headers.referer, undefined); assert.equal(h.headers.authorization, undefined);
     assert.ok(/^Mozilla\/5\.0/.test(h.headers['user-agent']) && !/terms|guide|tc-/i.test(h.headers['user-agent']), "the browser's own User-Agent: " + h.headers['user-agent']);
   }
-  ok('requests: one GET per document + one robots.txt, no cookies, no Referer, no Authorization, default Firefox User-Agent');
+  ok('requests: one GET per document (no robots.txt), no cookies, no Referer, no Authorization, default Firefox User-Agent');
   const g2 = JSON.parse(await execAsync('return JSON.stringify(await chrome.permissions.getAll())'));
   assert.deepEqual(g2.origins, ['https://docs.newsco.test/*'], 'only the one site was granted');
   ok('only that one site was granted: ' + g2.origins.join(', '));
 
-  // (6) the guarded-fetch details that depend on the browser: robots.txt disallow, redirects not followed (opaqueredirect in Firefox too),
+  // (6) the guarded-fetch details that depend on the browser: redirects (no robots.txt check since v1.1), not followed (opaqueredirect in Firefox too),
   // non-https / loopback links refused. Fed with the real injected-script result of the news page, like the Explain page itself does.
   const home = JSON.parse(await execAsync(`
     const src = await (await fetch(chrome.runtime.getURL('explain/explain.js'))).text();
@@ -215,13 +215,13 @@ try {
     return JSON.stringify({ kind: out.kind, read: out.read, unread: out.unread, items: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')) });`, [home, links(extra)]));
   const before2 = tlsHits.length;
   const rd = await run([['https://docs.newsco.test/blocked-by-robots', 'Blocked Policy'], ['https://docs.newsco.test/moved-terms', 'Moved Terms'], ['https://docs.newsco.test/moved-offsite', 'Offsite Terms'], ['http://127.0.0.1:1/internal', 'Internal Policy']]);
-  assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 2); assert.equal(rd.unread, 4);
-  assert.ok(rd.items.some((t) => /Blocked Policy/.test(t) && /robots\.txt asks automated tools not to fetch this page/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.items));
+  assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 3); assert.equal(rd.unread, 3);
+  assert.ok(!rd.items.some((t) => /Blocked Policy/.test(t) && /not read/.test(t)), 'a robots.txt Disallow no longer blocks the page: ' + JSON.stringify(rd.items));
   assert.ok(rd.items.some((t) => /Moved Terms/.test(t) && /this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t)), JSON.stringify(rd.items));
   assert.ok(rd.items.some((t) => /Offsite Terms/.test(t) && /this link sends you to another page/.test(t)));
   assert.ok(rd.items.some((t) => /Internal Policy/.test(t) && /link not allowed/.test(t)));
-  assert.deepEqual(tlsHits.slice(before2).map((h) => h.url).sort(), ['/moved-offsite', '/moved-terms', '/privacy', '/robots.txt', '/terms'], 'robots-disallowed page never requested; redirect targets never requested; loopback never requested');
-  ok('Firefox guarded fetch: robots.txt disallow honoured, same-site and off-site redirects NOT followed (targets never requested), loopback/http link refused; the rest still read');
+  assert.deepEqual(tlsHits.slice(before2).map((h) => h.url).sort(), ['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/terms'], 'no robots.txt request, the robots-disallowed page is simply read; redirect targets never requested; loopback never requested');
+  ok('Firefox guarded fetch: no robots.txt check, same-site and off-site redirects NOT followed (targets never requested), loopback/http link refused; the rest still read');
 
   // (7) the access the user granted can be removed again
   await exec(`document.getElementById('revoke').click(); return 1`);

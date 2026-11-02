@@ -101,7 +101,7 @@
 
   function userLang() { return (navigator.languages && navigator.languages[0]) || navigator.language || 'en-US'; }
 
-  // One finding = one plain-English sentence. The exact verified wording is collapsed (a <details>, closed by default).
+  // One finding = one plain-English sentence, with its exact verified wording shown right under it (a <details> that is OPEN by default: no click needed).
   // When several documents were read, each point says which of them it comes from.
   function pointItem(f, multi) {
     var li = el('li', undefined, 'point sev-' + f.severity);
@@ -112,7 +112,9 @@
     li.appendChild(top);
     if (f.contextNote) li.appendChild(el('div', f.contextNote, 'ctx'));
     var d = el('details');
-    d.appendChild(el('summary', 'Show exact wording'));
+    d.open = true;
+    d.className = 'exact';
+    d.appendChild(el('summary', 'Exact wording'));
     var lastSource = null;
     f.evidence.forEach(function (e) {
       if (multi && e.source && e.source !== lastSource) { d.appendChild(el('div', 'From ' + e.source + ':', 'label')); lastSource = e.source; }
@@ -158,13 +160,28 @@
     if (it.needs_js) return 'This page only shows its text after it runs JavaScript, so I cannot read it from here. Open it, then click Term Sherpa there and I will explain what is on the screen.';
     return '';
   }
-  function unreadSummary(results) {
-    var bad = results.filter(function (r) { return !r.ok; });
-    var redirects = bad.filter(function (r) { return r.redirect; }).length, js = bad.filter(function (r) { return r.needs_js; }).length;
-    if (bad.length && redirects === bad.length) return bad.length === 1 ? 'This link sends you to another page. Open it and run Term Sherpa there.' : 'These links send you to other pages. Open one and run Term Sherpa there.';
-    if (bad.length && js === bad.length) return bad.length === 1 ? 'This page only shows its text after it runs JavaScript, so I cannot read it from here. Open it, then click Term Sherpa there and I will explain what is on the screen.' : 'These pages only show their text after they run JavaScript, so I cannot read them from here. Open one, then click Term Sherpa there.';
-    if (redirects || js) return 'I could not read ' + (results.length > 1 ? 'any of the ' + results.length + ' documents' : 'this document') + ' from here. Some send you to another page or need JavaScript: open them from the list below and run Term Sherpa there.';
-    return 'I could not read any of the ' + results.length + ' documents (see below). Open them from the list.';
+  // Plain words for why one document was not read (used in the amber notice).
+  function unreadWhy(it) {
+    if (it.redirect) return 'its link sends you to another page, and I do not follow redirects because I cannot check where they lead' + (it.target ? ' (it goes to ' + hostOf(it.target) + ')' : '');
+    if (it.needs_js) return 'its text only appears after the page runs JavaScript, which I do not run';
+    var r = String(it.reason || 'it could not be read');
+    return r.replace(/^not read: /, '').replace(/^not opened: /, '');
+  }
+  // (c) Any document that could not be read: a clear amber notice that says plainly why. Shown for every unread document, whether or not others were read.
+  function renderUnreadNotice(items) {
+    var box = $('unread'), list = $('unread-list'); clear(list);
+    var bad = items.filter(function (x) { return !x.ok; });
+    bad.forEach(function (it) {
+      var li = el('li');
+      li.appendChild(el('strong', (it.label || 'A document') + ': '));
+      li.appendChild(document.createTextNode('I could not read this one because ' + unreadWhy(it) + '.'));
+      var adv = unreadAdvice(it);
+      if (adv) li.appendChild(el('div', adv, 'advice'));
+      list.appendChild(li);
+    });
+    $('unread-head').textContent = bad.length === 1 ? 'One document could not be read' : bad.length + ' documents could not be read';
+    $('unread-lead').textContent = items.some(function (x) { return x.ok; }) ? 'The explanation above does not cover ' + (bad.length === 1 ? 'it' : 'them') + '.' : 'Nothing could be explained.';
+    box.hidden = bad.length === 0;
   }
 
   // Which documents were read, which were not and why. Collapsed. Links are opened by the user, never followed here.
@@ -184,7 +201,9 @@
       list.appendChild(li);
     });
     $('docs-count').textContent = 'Documents read (' + items.filter(function (x) { return x.ok; }).length + ' of ' + items.length + ')';
+    box.open = false; // collapsed, at the bottom
     box.hidden = items.length === 0;
+    renderUnreadNotice(items);
   }
 
   // List mode: the distinct documents (regional / language copies collapsed), 3 shown, the rest behind a toggle.
@@ -202,7 +221,7 @@
       li.appendChild(el('div', l.url, 'url'));
       if (!l.is_pdf) {
         var ex = el('button', 'Explain this');
-        ex.addEventListener('click', function () { explainLinks([l], { host: ctx.host, via: 'links', gesture: true }); });
+        ex.addEventListener('click', function () { /* 'all': if this one cannot be read, the whole list stays */ explainLinks([l], { host: ctx.host, via: 'links', gesture: true, all: links }); });
         li.appendChild(ex);
         li.appendChild(document.createTextNode(' '));
       }
@@ -225,6 +244,7 @@
     all.hidden = readable.length < 2;
     all.onclick = function () { explainLinks(readable, { host: ctx.host, via: 'links', gesture: true }); };
     $('candidates').hidden = docs.length === 0;
+    $('candidates').open = !$('result').hidden ? false : true; // collapsed at the bottom under an explanation; open when it is the only thing to act on
     $('paste').hidden = docs.length !== 0;
   }
 
@@ -248,12 +268,12 @@
   }
 
   async function explainLinks(links, ctx) {
-    $('permission').hidden = true; $('result').hidden = true; $('docs-read').hidden = true;
+    $('permission').hidden = true; $('result').hidden = true; $('docs-read').hidden = true; $('unread').hidden = true;
     var docs = TCLinkGroup.dedupe(links, { lang: userLang() }).docs;
     var prep = TCDocFetch.prepare(docs.map(function (d) { return { url: d.url, label: d.label, doc_type: d.doc_type, is_pdf: d.is_pdf, variants: d.variants }; }), { guard: TCNetGuard, detect: TCDetect });
     if (!prep.accepted.length) {
       setStatus('I found links to legal pages, but none of them can be read here (' + prep.rejected.map(function (r) { return r.label + ': ' + r.reason; }).join('; ') + '). They are listed below.', true);
-      showCandidates(links, ctx);
+      showCandidates(ctx.all || links, ctx);
       return { kind: 'links' };
     }
     if (ctx.gesture) setStatus('Waiting for your browser to ask you about access to ' + siteNames(prep.origins) + '...');
@@ -262,7 +282,7 @@
       if (ctx.gesture) setStatus('Access to ' + siteNames(prep.origins) + ' was not allowed, so nothing was read.', true);
       else setStatus(ctx.intro);
       showPermission(prep, links, ctx);
-      showCandidates(links, ctx);
+      showCandidates(ctx.all || links, ctx);
       return { kind: 'permission', docs: prep.accepted.map(function (d) { return d.label; }), origins: prep.origins };
     }
     pending = null;
@@ -271,8 +291,8 @@
     var unread = results.filter(function (r) { return !r.ok; }).concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }));
     renderDocuments(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); })));
     if (!read.length) {
-      setStatus(unreadSummary(results.concat(prep.rejected.map(function (r) { return Object.assign({ ok: false }, r); }))), true);
-      showCandidates(links, ctx);
+      setStatus('I could not read ' + (results.length + prep.rejected.length > 1 ? 'any of these documents' : 'this document') + ' (see the notice below).', true);
+      showCandidates(ctx.all || links, ctx);
       return { kind: 'unreadable', unread: unread.map(function (u) { return u.label + ': ' + u.reason; }) };
     }
     var analysis = TCAnalyze.analyzeDocuments(read.map(function (r) { return { text: r.text, doc_type: r.doc_type, label: r.label, url: r.url }; }),
@@ -310,7 +330,7 @@
 
   /* Turn the injected script's result into what the window shows. Exposed (TCExplainUI.show) so the headless e2e can check the rendering. */
   async function show(res) {
-    ['result', 'candidates', 'paste', 'permission', 'docs-read'].forEach(function (id) { $(id).hidden = true; });
+    ['result', 'candidates', 'paste', 'permission', 'docs-read', 'unread'].forEach(function (id) { $(id).hidden = true; });
     var page = res.page || {};
     $('frames').hidden = true; frameAsk = null;
     var host = hostOf(page.url || (res.extracted && res.extracted.url) || '');

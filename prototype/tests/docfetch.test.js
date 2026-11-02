@@ -30,7 +30,7 @@ function fakeFetch(routes, calls) {
     };
   };
 }
-const deps = (routes, calls, extra) => Object.assign({ robots: false, fetch: fakeFetch(routes, calls), parseHtml, guard, detect, extract, untrusted }, extra || {});
+const deps = (routes, calls, extra) => Object.assign({ fetch: fakeFetch(routes, calls), parseHtml, guard, detect, extract, untrusted }, extra || {});
 const doc = (url, label, doc_type) => ({ url, label: label || 'Terms', doc_type: doc_type || 'tos' });
 
 test('prepare: https only; localhost, private, link-local, credentials and non-web schemes are refused', () => {
@@ -204,6 +204,29 @@ test('fetchAll: sequential, one request per document, failures are reported per 
   assert.deepEqual(out.map((r) => r.ok), [true, true, false, false]);
   assert.deepEqual(calls.map((c) => c.url), docs.map((x) => x.url));
   assert.deepEqual(order, [0, 1, 2, 3]);
+});
+
+test('no robots.txt check (v1.1): a robots.txt that disallows everything is never requested and never blocks a page the person asked for; the other safeguards stay', async () => {
+  const calls = [];
+  const routes = {
+    'https://a.example.test/robots.txt': { body: 'User-agent: *\nDisallow: /\n', type: 'text/plain' },
+    'https://a.example.test/terms': { body: page('Terms of Use', LONG) },
+    'https://a.example.test/privacy': { body: page('Privacy Policy', LONG) }
+  };
+  const out = await TCDocFetch.fetchAll([doc('https://a.example.test/terms'), doc('https://a.example.test/privacy', 'Privacy', 'privacy')], deps(routes, calls));
+  assert.deepEqual(out.map((r) => r.ok), [true, true], 'both read even though robots.txt says Disallow: /');
+  assert.deepEqual(calls.map((c) => c.url), ['https://a.example.test/terms', 'https://a.example.test/privacy'], 'robots.txt was never requested, one request per document, in order');
+  calls.forEach((c) => { assert.equal(c.init.credentials, 'omit', 'no cookies'); assert.equal(c.init.redirect, 'manual'); assert.equal(c.init.method, 'GET'); });
+  assert.ok(!/robots/i.test(fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'docfetch.js'), 'utf8').replace(/\/\*[^]*?\*\//g, '')), 'docfetch.js no longer refers to robots at all (outside comments)');
+  assert.ok(!/robots/i.test(fs.readFileSync(path.join(__dirname, '..', 'extension', 'explain', 'explain.html'), 'utf8')), 'explain.html does not load robots.js');
+  assert.ok(!/robots/i.test(fs.readFileSync(path.join(__dirname, '..', 'extension', 'explain', 'explain.js'), 'utf8').replace(/\/\*[^]*?\*\//g, '')));
+});
+
+test('no robots.txt check: the private-address checks still run first (the Firefox DNS check before any request; the static guard is covered by the prepare tests)', async () => {
+  const calls = [];
+  const out = await TCDocFetch.fetchAll([doc('https://a.example.test/terms')], deps({ 'https://a.example.test/terms': { body: page('Terms', LONG) } }, calls, { dnsCheck: async (h) => (h === 'a.example.test' ? 'its name points to a private or internal address, so it was not opened' : null) }));
+  assert.equal(out[0].ok, false); assert.match(out[0].reason, /private or internal/);
+  assert.deepEqual(calls, [], 'nothing was requested');
 });
 
 test('docfetch.js is the only extension script allowed to call fetch, and it holds no storage or cookie code', () => {

@@ -173,15 +173,38 @@ test('explain: DOMParser is used only in explain/domparse.js (detached, inert pa
   assert.ok(!/appendChild|insertBefore|replaceChild|document\.body|document\.write|importNode|adoptNode|innerHTML|\.src\s*=|eval\(/.test(src));
 });
 
-test('explain: concise window - exact wording sits in a collapsed <details>, and the filler is gone from the page', () => {
+test('explain: concise window - every finding is open by default with its exact wording, and the filler is gone from the page', () => {
   const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
   const js = explainSrc();
   assert.match(js, /el\('details'\)/);
-  assert.match(js, /el\('summary', 'Show exact wording'\)/);
-  assert.ok(!/\.open\s*=|setAttribute\(\s*['"]open/.test(js), 'details are never opened by script');
-  assert.ok(!/<details[^>]*\bopen\b/.test(html), 'and never open in the markup');
+  assert.match(js, /el\('summary', 'Exact wording'\)/);
+  // pointItem(): the exact-wording <details> of a finding is opened when it is built
+  const point = js.slice(js.indexOf('function pointItem'), js.indexOf('function pointItem') + 900);
+  assert.match(point, /var d = el\('details'\);\s*d\.open = true;/, 'each finding is open by default');
   for (const f of [html, js]) assert.ok(!/word count|reading time|\bminutes\b|of the 12|What you have to do|What it is about|What you.re agreeing to/i.test(f), 'no filler text');
   assert.match(html, /Worth knowing/);
+});
+
+test('explain: order is Summary, Worth knowing, amber "could not be read" notice, then Documents read and Legal documents on this page, both collapsed at the bottom', () => {
+  const html = fs.readFileSync(path.join(EXT, 'explain', 'explain.html'), 'utf8');
+  const at = (re) => { const m = html.search(re); assert.ok(m >= 0, String(re)); return m; };
+  const order = [at(/id="h-summary"/), at(/id="h-risks"/), at(/id="unread"/), at(/id="docs-read"/), at(/id="candidates"/)];
+  assert.deepEqual(order, order.slice().sort((a, b) => a - b), 'sections appear in the approved order');
+  // the amber notice is a real alert, hidden until a document could not be read
+  assert.match(html, /<section id="unread" class="amber" role="alert" hidden/);
+  // both bottom sections are <details>, closed in the markup
+  for (const id of ['docs-read', 'candidates']) {
+    const tag = (html.match(new RegExp('<details id="' + id + '"[^>]*>')) || [])[0];
+    assert.ok(tag, id + ' is a <details>'); assert.ok(!/\bopen\b/.test(tag), id + ' is collapsed in the markup');
+  }
+  assert.match(html, /<summary id="docs-count">Documents read</); assert.match(html, /<summary id="candidates-head">Legal documents on this page</);
+  // script: the documents-read box is collapsed by script too; the amber notice says plainly why; robots.js is not loaded
+  const js = explainSrc();
+  assert.match(js, /box\.open = false;/);
+  assert.match(js, /renderUnreadNotice/); assert.match(js, /I could not read this one because/);
+  assert.ok(!/robots\.js/.test(html), 'robots.js is not loaded by the Explain page');
+  const css = fs.readFileSync(path.join(EXT, 'explain', 'explain.css'), 'utf8');
+  assert.match(css, /#unread\b[^{]*\{[^}]*(#?[a-f0-9]{3,6}|amber|orange)/i, 'the notice has amber styling');
 });
 
 test('docs: README documents the Explain usage and implementation.md keeps CSO Concerns first', () => {

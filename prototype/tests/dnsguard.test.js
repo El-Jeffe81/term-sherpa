@@ -46,7 +46,7 @@ test('dnsguard: fromBrowser uses browser.dns.resolve in Firefox and gives null w
   assert.match(await c('x.example'), /private or internal/); assert.deepEqual(seen, ['x.example']);
 });
 
-test('docfetch: with a dnsCheck, a name pointing at a private address is never requested (not even robots.txt); without one nothing changes', async () => {
+test('docfetch: with a dnsCheck, a name pointing at a private address is never requested (no request of any kind); without one nothing changes', async () => {
   const LONG = '<p>' + 'You agree that we may collect and use information about you to run the service. '.repeat(8) + '</p>';
   const html = '<!doctype html><html lang="en"><head><title>Terms</title></head><body><main><h1>Terms</h1>' + LONG + '</main></body></html>';
   const calls = [];

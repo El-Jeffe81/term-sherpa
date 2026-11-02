@@ -19,16 +19,17 @@
  *   - Firefox only: deps.dnsCheck (core/dnsguard.js, browser.dns.resolve) refuses a name that resolves to a private/loopback/link-local/reserved
  *     address before any request; Chrome has no such API and keeps the static checks only
  *   - IP-literal hosts (https://203.0.113.9/...) are refused as well as private ranges: legal documents live on named sites
- *   - before each document, https://<site>/robots.txt is read the same guarded way (core/robots.js); a disallow skips the document
+ *   - robots.txt is NOT consulted (v1.1): every fetch here is one page the person asked for with a click, and robots.txt is for crawlers.
+ *     Everything else above still applies: no cookies, one page at a time, the per-click limit, the address checks.
  *   - the response is parsed with an injected parser that builds an inert tree (the page's scripts, images and styles
  *     are never run or loaded); all resulting text is treated as untrusted
  * Nothing here stores anything. Dependencies (fetch, parser, guards) are injected so Node tests can drive it.
  */
 (function (root, factory) {
-  var api = factory(typeof module === 'object' && module.exports ? require('./robots') : root.TCRobots);
+  var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.TCDocFetch = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (Robots) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
   var MAX_DOCS = 6;
@@ -106,7 +107,7 @@
   /*
    * fetchDoc(doc, deps) -> Promise<{label, doc_type, url, ok, text?, title?, lang?, reason?, sections?}>
    * Never rejects. deps: { fetch, parseHtml, guard, detect, extract, untrusted, timeoutMs?, maxBytes?, AbortController?,
-   *   dnsCheck? (Firefox only, see above), robotsCheck? (a checker shared by one analysis; fetchAll makes it), robots? (false = skip the robots.txt check; tests only) }
+   *   dnsCheck? (Firefox only, see above) }
    */
   function isRedirect(res) {
     return res.type === 'opaqueredirect' || res.redirected === true || (res.status >= 300 && res.status < 400);
@@ -139,20 +140,15 @@
     var AC = deps.AbortController || globalThis.AbortController;
     var ctl = new AC(), timedOut = false, timer = null;
     var limit = deps.maxBytes || MAX_BYTES;
-    var robotsCheck = deps.robots === false ? null : (deps.robotsCheck || Robots.createChecker(deps));
     var base = { label: doc.label, doc_type: doc.doc_type, url: doc.url, variants: doc.variants };
     function fail(reason) { return Object.assign({ ok: false, reason: reason }, base); }
 
     return Promise.resolve().then(function () {
-      // Firefox only (deps.dnsCheck exists only there): a name that resolves to a private/internal address is never requested, not even robots.txt
+      // Firefox only (deps.dnsCheck exists only there): a name that resolves to a private/internal address is never requested
       return deps.dnsCheck ? deps.dnsCheck(new URL(doc.url).hostname) : null;
     }).then(function (dnsProblem) {
       if (dnsProblem) return { skipped: fail('not opened: ' + dnsProblem) };
-      return robotsCheck ? robotsCheck(doc.url) : { allowed: true };
-    }).then(function (rb) {
-      if (rb.skipped) return rb;
-      if (!rb.allowed) return { skipped: fail(rb.reason) };
-      timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS); // starts after the robots.txt check
+      timer = setTimeout(function () { timedOut = true; ctl.abort(); }, deps.timeoutMs || TIMEOUT_MS);
       return deps.fetch(doc.url, {
         method: 'GET', credentials: 'omit', redirect: 'manual', referrerPolicy: 'no-referrer', cache: 'no-store',
         signal: ctl.signal, headers: { Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9' }
@@ -192,10 +188,8 @@
   }
 
   // Sequential, so a click makes at most MAX_DOCS requests, one at a time.
-  // One robots.txt checker per call = robots.txt is cached per site for this analysis only and dropped afterwards.
   function fetchAll(docs, deps, onProgress) {
     var out = [];
-    if (deps.robots !== false && !deps.robotsCheck) deps = Object.assign({}, deps, { robotsCheck: Robots.createChecker(deps) });
     return docs.reduce(function (p, d, i) {
       return p.then(function () {
         if (onProgress) onProgress(i, docs.length, d);

@@ -173,33 +173,4 @@ const htmlRoute = (t) => (url) => { const b = new TextEncoder().encode(page(t));
 const dd = (routes, calls) => ({ fetch: mkFetch(routes, calls), parseHtml, guard, detect, extract, untrusted });
 const D = (url, label) => ({ url, label: label || 'Terms', doc_type: 'tos' });
 
-test('fetchAll + robots: a disallowed document is never requested - it is reported "not read" with the reason and its own link; others are read', async () => {
-  const calls = [];
-  const routes = {
-    'https://a.example.test/robots.txt': { body: TXT },
-    'https://a.example.test/private/terms': htmlRoute('Terms'), 'https://a.example.test/privacy': htmlRoute('Privacy Policy')
-  };
-  const out = await TCDocFetch.fetchAll([D('https://a.example.test/private/terms'), D('https://a.example.test/privacy', 'Privacy')], dd(routes, calls));
-  assert.deepEqual(out.map((r) => r.ok), [false, true]);
-  assert.match(out[0].reason, /robots\.txt/); assert.equal(out[0].url, 'https://a.example.test/private/terms'); assert.equal(out[0].text, undefined);
-  assert.deepEqual(calls.map((c) => c.url), ['https://a.example.test/robots.txt', 'https://a.example.test/privacy'], 'robots.txt once, the disallowed page never');
-});
-
-test('fetchAll + robots: robots.txt missing or failing does not stop the fetch', async () => {
-  for (const robots of [undefined, { status: 404 }, { status: 500 }]) {
-    const calls = [];
-    const routes = { 'https://a.example.test/terms': htmlRoute('Terms') };
-    if (robots) routes['https://a.example.test/robots.txt'] = robots;
-    const out = await TCDocFetch.fetchAll([D('https://a.example.test/terms')], dd(routes, calls));
-    assert.equal(out[0].ok, true);
-  }
-});
-
-test('fetchAll + robots: a fresh robots.txt cache per call (nothing kept between analyses)', async () => {
-  const calls = [];
-  const routes = { 'https://a.example.test/robots.txt': { body: 'User-agent: *\nDisallow:\n' }, 'https://a.example.test/terms': htmlRoute('Terms') };
-  const d = dd(routes, calls);
-  await TCDocFetch.fetchAll([D('https://a.example.test/terms')], d);
-  await TCDocFetch.fetchAll([D('https://a.example.test/terms')], d);
-  assert.equal(calls.filter((c) => c.url.endsWith('/robots.txt')).length, 2, 'robots.txt is not kept between analyses');
-});
+// (v1.1: docfetch no longer calls robots.js; see 'no robots.txt check' in tests/docfetch.test.js. This file only tests the unused module.)
