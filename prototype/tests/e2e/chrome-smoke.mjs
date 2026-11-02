@@ -23,7 +23,7 @@ if (!CHROME) { console.log('SKIP: no Chrome/Chromium found (set CHROME_BIN)'); p
 // (--ignore-certificate-errors). Nothing in the extension is relaxed for this: the production URL guard sees a normal https URL.
 const docsTls = await require('../helpers/docs-tls.js').startDocsTls(); // null when openssl is missing
 const tls = docsTls && docsTls.server; const tlsHits = docsTls ? docsTls.hits : [];
-const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MAP docs.newsco.test 127.0.0.1:${tls.address().port}, MAP cmp.newsco.test 127.0.0.1:${tls.address().port}`] : [];
+const tlsFlags = tls ? ['--ignore-certificate-errors', `--host-resolver-rules=MAP docs.newsco.test 127.0.0.1:${tls.address().port}, MAP cmp.newsco.test 127.0.0.1:${tls.address().port}, MAP legal.newsco.test 127.0.0.1:${tls.address().port}, MAP policies.otherco.test 127.0.0.1:${tls.address().port}`] : [];
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chrome-'));
 // Pipe transport: Extensions.loadUnpacked is only available with --remote-debugging-pipe + --enable-unsafe-extension-debugging
@@ -467,7 +467,8 @@ try {
     assert.ok(!tlsHits.some((h) => /internal/.test(h.url)));
     ok('JS-only document -> "needs JavaScript" with its link offered; a non-https / loopback link is refused and never requested');
 
-    // a robots.txt that disallows the page does NOT block it (v1.1); redirects: not followed, with the link offered, and the other documents still read
+    // A robots.txt that disallows the page does NOT block it (v1.1). Redirects, with ALL-SITES access (this copy of the extension has https://*/* granted):
+    // a same-site hop is followed and read; a hop to an address that is not allowed (an IP literal) is discarded; nothing else is requested.
     const withRedir = JSON.parse(JSON.stringify(home));
     withRedir.consent.links = withRedir.consent.links.filter((l) => /\/(terms|privacy)$/.test(l.url));
     for (const [pth, text] of [['blocked-by-robots', 'Blocked Policy'], ['moved-terms', 'Moved Terms'], ['moved-offsite', 'Offsite Terms']]) {
@@ -475,13 +476,43 @@ try {
     }
     const before2 = tlsHits.length;
     const rd = await gview(withRedir);
-    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 3); assert.equal(rd.unread, 2);
+    assert.equal(rd.kind, 'documents'); assert.equal(rd.read, 4); assert.equal(rd.unread, 1);
     assert.ok(!rd.docItems.some((t) => /Blocked Policy/.test(t) && /not read/.test(t)), 'robots.txt Disallow no longer stops a page the user asked for: ' + JSON.stringify(rd.docItems));
-    assert.ok(rd.docItems.some((t) => /Moved Terms/.test(t) && /not read: this link sends you to another page/.test(t) && /Open it and run Term Sherpa there/.test(t) && /Open this page/.test(t)), JSON.stringify(rd.docItems));
-    assert.ok(rd.docItems.some((t) => /Offsite Terms/.test(t) && /not read: this link sends you to another page/.test(t) && /Open this page/.test(t)));
+    assert.ok(rd.docItems.some((t) => /^Moved Termsreadhttps:/.test(t)), 'same-site redirect followed and read, same host so no "Read from": ' + JSON.stringify(rd.docItems));
+    assert.ok(rd.docItems.some((t) => /Offsite Terms/.test(t) && /not read/.test(t)), JSON.stringify(rd.docItems));
     const hits2 = tlsHits.slice(before2).map((h) => h.url).sort();
-    assert.deepEqual(hits2, ['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/terms'], 'no robots.txt request, the robots-disallowed page is simply read; redirect targets (/redirect-trap and the same-site /terms hop) never requested; each redirecting URL requested once');
-    ok('no robots.txt request or check (a Disallow page is read); redirects (same-site and off-site) are not followed, never requested, link shown; the rest still read');
+    assert.deepEqual(hits2, ['/blocked-by-robots', '/moved-offsite', '/moved-terms', '/privacy', '/redirect-trap', '/terms', '/terms'], 'no robots.txt request; the browser itself follows each redirect once (including the one to the address that is then discarded)');
+    ok('all-sites access: no robots.txt check (a Disallow page is read); a same-site redirect is followed and read; a redirect to an IP address is discarded (not read)');
+
+    // Redirects that leave the host, all-sites access: shows "Read from <host>", and the unrelated-site finding only for a host of another owner
+    const crossRes = JSON.parse(JSON.stringify(home));
+    crossRes.page = { url: 'https://www.newsco.test/home' };
+    crossRes.consent.links = [['terms', 'Terms'], ['moved-cross', 'Privacy Policy'], ['moved-sub', 'Legal Hub Terms']].map(([pth, text]) => ({ url: 'https://docs.newsco.test/' + pth, text, doc_type: pth === 'moved-cross' ? 'privacy' : 'tos', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 }));
+    const snapCross = (kind) => `(async () => { const out = await TCExplainUI.show(${JSON.stringify(crossRes)}); return JSON.stringify({ kind: out.kind, readFrom: [...document.querySelectorAll('#read-from li')].map((n) => n.textContent), readFromHidden: document.getElementById('read-from').hidden,
+      points: [...document.querySelectorAll('#risk-list li.point, #also-list li.point')].map((li) => ({ line: li.querySelector('.line .text').textContent, details: li.querySelectorAll('details').length, src: li.querySelector('.src') ? li.querySelector('.src').textContent : '' })),
+      docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')), optinHidden: document.getElementById('optin').hidden, unreadHidden: document.getElementById('unread').hidden }); })()`;
+    const cr = JSON.parse(await gx.ev(snapCross()));
+    assert.equal(cr.kind, 'documents');
+    assert.ok(cr.readFrom.includes('Privacy: Read from policies.otherco.test') && cr.readFrom.includes('Legal Hub Terms: Read from legal.newsco.test'), JSON.stringify(cr.readFrom));
+    assert.equal(cr.readFromHidden, false); assert.equal(cr.optinHidden, true); assert.equal(cr.unreadHidden, true);
+    const unrelated = cr.points.filter((p) => /hosted on an unrelated site/.test(p.line));
+    assert.deepEqual(unrelated.map((p) => p.line), ['This policy is hosted on an unrelated site (policies.otherco.test), which is unusual.'], JSON.stringify(unrelated));
+    assert.equal(unrelated[0].details, 0, 'a finding about where it is hosted has no quotation'); assert.equal(unrelated[0].src, 'Privacy');
+    assert.ok(cr.docItems.some((t) => /Privacy/.test(t) && /Read from policies\.otherco\.test/.test(t)) && cr.docItems.some((t) => /Legal Hub Terms/.test(t) && /Read from legal\.newsco\.test/.test(t)), JSON.stringify(cr.docItems));
+    if (process.env.TC_UI_SHOTS) { fs.mkdirSync(process.env.TC_UI_SHOTS, { recursive: true }); const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, gx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'read-from-and-unrelated-finding.png'), Buffer.from(sh.data, 'base64')); }
+    if (process.env.TC_UI_SHOTS) { // a close-up of the unrelated-site finding itself
+      const r = JSON.parse(await gx.ev("(() => { const li = [...document.querySelectorAll('li.point')].find((n) => /hosted on an unrelated site/.test(n.textContent)); const b = li.getBoundingClientRect(); return JSON.stringify({ x: 0, y: b.top + scrollY - 70, width: innerWidth, height: b.height + 100 }); })()"));
+      const sh2 = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...r, scale: 1 } }, gx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'unrelated-site-finding.png'), Buffer.from(sh2.data, 'base64'));
+    }
+    ok('all-sites access: a link that leads to another host shows "Read from <host>" (top of results and documents list); the unrelated-site finding appears for policies.otherco.test only, not for the same owner\'s legal.newsco.test');
+
+    // A page larger than 8 MB: the first 8 MB are read, the amber "Only part of this document was read." notice is shown (no rejection)
+    const hugeRes = JSON.parse(JSON.stringify(home)); hugeRes.consent.links = [{ url: 'https://docs.newsco.test/huge-terms', text: 'Terms', doc_type: 'tos', confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 }];
+    const hg = JSON.parse(await gx.ev(`(async () => { const out = await TCExplainUI.show(${JSON.stringify(hugeRes)}); return JSON.stringify({ kind: out.kind, partialHidden: document.getElementById('partial').hidden, head: document.getElementById('partial-head').textContent, text: document.getElementById('partial').innerText, unreadHidden: document.getElementById('unread').hidden, resultHidden: document.getElementById('result').hidden, docs: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')) }); })()`));
+    assert.equal(hg.kind, 'documents'); assert.equal(hg.partialHidden, false); assert.equal(hg.head, 'Only part of this document was read.'); assert.equal(hg.unreadHidden, true); assert.equal(hg.resultHidden, false);
+    assert.ok(hg.docs.some((t) => /read \(only part\)/.test(t)), JSON.stringify(hg.docs));
+    if (process.env.TC_UI_SHOTS) { const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, gx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'partial-read-notice.png'), Buffer.from(sh.data, 'base64')); }
+    ok('a 9 MB document is not rejected: the first 8 MB are read and "Only part of this document was read." is shown');
 
     // list mode: regional duplicates collapsed, three shown, the rest behind a toggle, and the dialog result still works for a banner
     const pc = await runIn(site.base + '/privacy-center', {});
@@ -565,6 +596,71 @@ try {
       assert.match(js.status, /^This looks like a terms or privacy page, but I can see very little text on it\./); assert.match(js.status, /Wait for it to finish/);
       assert.equal(js.resultHidden, true);
       ok('JavaScript-only terms page (address says terms, almost no text) -> a plain "very little text, wait / open the read-more parts, then click again" message');
+      // ---- NARROW mode: only docs.newsco.test is allowed (like only cnn.com). A link that leaves that site cannot be followed.
+      {
+        const nres = JSON.parse(JSON.stringify(home)); nres.page = { url: 'https://www.newsco.test/home' };
+        nres.consent.links = [['terms', 'Terms', 'tos'], ['moved-terms', 'Moved Terms', 'other'], ['moved-cross', 'Privacy Policy', 'privacy']].map(([pth, text, t]) => ({ url: 'https://docs.newsco.test/' + pth, text, doc_type: t, confidence: 'high', language: 'en', non_english: false, is_pdf: false, score: 3 }));
+        const nx = await openTab(`chrome-extension://${nid}/explain/explain.html`);
+        await nx.ev("document.getElementById('welcome').hidden = true; document.getElementById('app').hidden = false; chrome.storage.local.remove('tc.allSitesDeclined'); 1");
+        const nbefore = tlsHits.length;
+        const nsnap = () => nx.ev(`(async () => { const out = await TCExplainUI.show(${JSON.stringify(nres)}); return JSON.stringify({ kind: out.kind, read: out.read, unread: out.unread, optinHidden: document.getElementById('optin').hidden, optinHead: document.getElementById('optin-head').textContent, optinText: document.getElementById('optin-text').textContent,
+          optinBtns: [...document.querySelectorAll('#optin button')].map((b) => b.textContent), unreadHidden: document.getElementById('unread').hidden, unreadHead: document.getElementById('unread-head').textContent, unreadText: document.getElementById('unread-list').innerText,
+          readItBtns: [...document.querySelectorAll('#unread-list button')].map((b) => b.textContent), docItems: [...document.querySelectorAll('#docs-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ')), status: document.getElementById('status').textContent,
+          allSites: document.getElementById('all-sites').checked, granted: (await chrome.permissions.getAll()).origins }); })()`).then(JSON.parse);
+        const n1 = await nsnap();
+        assert.equal(n1.kind, 'documents'); assert.equal(n1.read, 2, 'the same-site redirect works without all-sites access: ' + JSON.stringify(n1.docItems)); assert.equal(n1.unread, 1);
+        assert.equal(n1.unreadHead, "1 document couldn't be read");
+        assert.ok(/Privacy wasn't read\. Its link goes to another site, which Term Sherpa doesn't follow yet\.\s*Open it and click Term Sherpa there\./.test(n1.unreadText.replace(/\s+/g, ' ')), JSON.stringify(n1.unreadText));
+        assert.ok(!/sends you to another page/.test(n1.unreadText + JSON.stringify(n1.docItems)), 'the old developer-ish wording is gone');
+        assert.deepEqual(n1.readItBtns, ['Read it']);
+        assert.equal(n1.optinHidden, false); assert.equal(n1.optinHead, "Read policies wherever they're hosted");
+        assert.equal(n1.optinText, "Chrome will say 'read and change all your data on all websites.' Term Sherpa only reads legal pages you ask about, saves nothing, and never runs their code.");
+        assert.deepEqual(n1.optinBtns, ['Allow all sites', 'Not now']);
+        assert.equal(n1.allSites, false);
+        const nHits = tlsHits.slice(nbefore);
+        const other = nHits.filter((h) => /policies\.otherco\.test/.test(h.headers.host || ''));
+        // Observed in real Chrome: without access to the other site the extension's fetch still lets the browser send the redirect hop (one GET) and only then refuses to hand over the answer
+        assert.equal(other.length, 1, 'the browser makes the redirect hop once (Term Sherpa cannot read the answer): ' + JSON.stringify(nHits.map((h) => [h.headers.host, h.url])));
+        assert.equal(other[0].headers.cookie, undefined); assert.equal(other[0].headers.referer, undefined); assert.equal(other[0].headers.authorization, undefined);
+        assert.equal(nHits.filter((h) => h.url === '/moved-cross').length, 2, 'the link itself is requested twice at most: once to follow it, once to find out it redirects away');
+        if (process.env.TC_UI_SHOTS) { const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, nx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'optin-screen.png'), Buffer.from(sh.data, 'base64')); }
+        if (process.env.TC_UI_SHOTS) { // the same screen at phone width (360 px)
+          await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }, nx.sessionId);
+          const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, nx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'optin-screen-phone.png'), Buffer.from(sh.data, 'base64'));
+          await send('Emulation.clearDeviceMetricsOverride', {}, nx.sessionId);
+        }
+        ok('narrow (only the page\'s own site allowed): same-site redirect read; a link to another site -> amber "Privacy wasn\'t read..." + "Read it" button + the Term Sherpa opt-in screen BEFORE any browser prompt; the other site\'s answer is never readable (the browser\'s own redirect hop is one cookie-less, referrer-less GET)');
+        // "Allow all sites" asks the browser for exactly https://*/* from the click (stubbed here: headless Chrome has no prompt); a denial is remembered and falls back to "Read it"
+        const clicked = JSON.parse(await nx.ev(`(async () => { globalThis.__asked = []; chrome.permissions.request = (o) => { globalThis.__asked.push(o); return Promise.resolve(false); };
+          document.getElementById('optin-go').click(); await new Promise((r) => setTimeout(r, 300));
+          return JSON.stringify({ asked: globalThis.__asked, optinHidden: document.getElementById('optin').hidden, status: document.getElementById('status').textContent, marker: (await chrome.storage.local.get('tc.allSitesDeclined'))['tc.allSitesDeclined'] === true }); })()`));
+        assert.deepEqual(clicked.asked, [{ origins: ['https://*/*'] }]); assert.equal(clicked.optinHidden, true); assert.equal(clicked.marker, true); assert.match(clicked.status, /was not allowed/);
+        const n2 = await nsnap();
+        assert.equal(n2.optinHidden, true, 'declined once: not asked again'); assert.equal(n2.unreadHidden, false); assert.deepEqual(n2.readItBtns, ['Read it']);
+        assert.ok(n2.docItems.some((t) => /Privacy/.test(t) && /Read it/.test(t)), JSON.stringify(n2.docItems));
+        await nx.ev("chrome.storage.local.remove('tc.allSitesDeclined'); 1");
+        const n3 = await nsnap(); assert.equal(n3.optinHidden, false);
+        await nx.ev("document.getElementById('optin-no').click(); new Promise((r) => setTimeout(r, 200))");
+        const n4 = await nsnap(); assert.equal(n4.optinHidden, true, '"Not now" is remembered');
+        ok('"Allow all sites" requests exactly the all-https-sites permission from the click; a denial or "Not now" is remembered (not nagged) and the document keeps its "Read it" button');
+        // "Read it" opens the link in a normal tab
+        const pagesNow = async () => (await send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page').map((t) => t.url);
+        const tabsBefore = (await pagesNow()).length;
+        await nx.ev("document.querySelector('#unread-list button.read-it').click(); new Promise((r) => setTimeout(r, 1000))");
+        const tabsAfter = await pagesNow();
+        assert.equal(tabsAfter.length, tabsBefore + 1); assert.ok(tabsAfter.some((u) => /docs\.newsco\.test\/moved-cross|policies\.otherco\.test\/privacy/.test(u)), 'the link opened in a normal tab (and the site redirected it as usual): ' + JSON.stringify(tabsAfter));
+        ok('"Read it" opens the document\'s own link in a normal new tab');
+        // Options switch: on asks for https://*/*; off removes exactly it (stubbed: headless Chrome has no prompt)
+        const sw = JSON.parse(await nx.ev(`(async () => { const calls = []; chrome.permissions.request = (o) => { calls.push(['request', o]); return Promise.resolve(true); }; chrome.permissions.contains = (o) => Promise.resolve(calls.some((c) => c[0] === 'request') && !calls.some((c) => c[0] === 'remove'));
+          chrome.permissions.remove = (o) => { calls.push(['remove', o]); return Promise.resolve(true); };
+          const box = document.getElementById('all-sites'); box.checked = true; box.dispatchEvent(new Event('change')); await new Promise((r) => setTimeout(r, 200)); const on = document.getElementById('status').textContent;
+          box.checked = false; box.dispatchEvent(new Event('change')); await new Promise((r) => setTimeout(r, 200));
+          return JSON.stringify({ calls, on, off: document.getElementById('status').textContent, checked: box.checked }); })()`));
+        assert.deepEqual(sw.calls, [['request', { origins: ['https://*/*'] }], ['remove', { origins: ['https://*/*'] }]]); assert.match(sw.on, /All-sites access is ON/); assert.match(sw.off, /All-sites access is OFF/); assert.equal(sw.checked, false);
+        ok('Options switch: turning all-sites access on requests https://*/*, turning it off removes exactly that');
+        if (process.env.TC_UI_SHOTS) { await nx.ev("document.getElementById('options').open = true; 1"); const sh = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, nx.sessionId); fs.writeFileSync(path.join(process.env.TC_UI_SHOTS, 'explain-options.png'), Buffer.from(sh.data, 'base64')); }
+        await send('Target.closeTarget', { targetId: nx.targetId });
+      }
       try { fs.rmSync(narrowDir, { recursive: true, force: true }); } catch {}
     }
 
